@@ -1,4 +1,5 @@
 "use client";
+
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -6,16 +7,23 @@ import { supabase } from "@/lib/supabase";
 export default function RoomPage() {
   const params = useParams();
   const rawId = params?.id;
-  const roomId = typeof rawId === "string" ? rawId : Array.isArray(rawId) ? rawId[0] : "BET-DEMO";
+  const roomId = typeof rawId === "string" ? rawId : Array.isArray(rawId) ? rawId[0] : "BS-SESSION";
 
   const [matches, setMatches] = useState<any[]>([]);
   const [picks, setPicks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"palinsesto" | "voti" | "schedina" | "comparatore">("palinsesto");
-  const [nick, setNick] = useState("Ospite");
+  const [marketFilter, setMarketFilter] = useState<"1X2" | "UO" | "COMBO">("1X2");
+  const [nick, setNick] = useState("Giocatore");
+  const [toast, setToast] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2500);
+  };
 
   useEffect(() => {
-    const savedNick = localStorage.getItem("bs_nick") || `Ospite_${Math.random().toString(36).slice(2, 6)}`;
+    const savedNick = localStorage.getItem("bs_nick") || `Player_${Math.random().toString(36).substring(2, 6)}`;
     setNick(savedNick);
 
     fetch("/api/odds")
@@ -24,60 +32,71 @@ export default function RoomPage() {
       .catch(() => setMatches([]))
       .finally(() => setLoading(false));
 
-    try {
-      supabase
-        .from("room_picks")
-        .select("*")
-        .eq("room_id", roomId)
-        .then(({ data }) => {
-          if (data) setPicks(data);
-        });
+    supabase
+      .from("room_picks")
+      .select("*")
+      .eq("room_id", roomId)
+      .then(({ data }) => {
+        if (data) setPicks(data);
+      });
 
-      const channel = supabase
-        .channel(`room_${roomId}`)
-        .on("postgres_changes", { event: "*", schema: "public", table: "room_picks", filter: `room_id=eq.${roomId}` }, (payload) => {
-          if (payload.eventType === "INSERT") {
-            setPicks((prev) => [...prev, payload.new]);
-          } else if (payload.eventType === "UPDATE") {
-            setPicks((prev) => prev.map((p) => (p.id === payload.new.id ? payload.new : p)));
-          } else if (payload.eventType === "DELETE") {
-            setPicks((prev) => prev.filter((p) => p.id === payload.old.id));
-          }
-        })
-        .subscribe();
+    const channel = supabase
+      .channel(`room_${roomId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "room_picks", filter: `room_id=eq.${roomId}` }, (payload) => {
+        if (payload.eventType === "INSERT") {
+          setPicks((prev) => (prev.some((p) => p.id === payload.new.id) ? prev : [...prev, payload.new]));
+        } else if (payload.eventType === "UPDATE") {
+          setPicks((prev) => prev.map((p) => (p.id === payload.new.id ? payload.new : p)));
+        } else if (payload.eventType === "DELETE") {
+          setPicks((prev) => prev.filter((p) => p.id === payload.old.id));
+        }
+      })
+      .subscribe();
 
-      return () => {
-        supabase.removeChannel(channel);
-      };
-    } catch (e) {
-      console.warn("Realtime non collegato, modalita locale");
-    }
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [roomId]);
 
   const proposePick = async (match: any, market: string, selection: string, odds: number) => {
-    const exists = picks.find((p) => p.match_id === match.id && p.status !== "rejected");
-    if (exists) {
-      alert("⚠️ Questa partita è già presente in schedina! Rimuovila per cambiarla.");
+    const existing = picks.find((p) => p.match_id === match.id);
+    if (existing) {
+      showToast(`⚠️ Evento già in ${existing.status === "confirmed" ? "schedina" : "votazione"}!`);
       return;
     }
 
+    const tempId = `pick_${Date.now()}`;
     const newPick = {
+      id: tempId,
       room_id: roomId,
       match_id: match.id,
-      match_label: `${match.home} vs ${match.away}`,
+      match_label: `${match.home} - ${match.away}`,
       market,
       selection,
       odds,
       proposed_by: nick,
       votes: { [nick]: 1 },
-      status: "pending",
+      status: "confirmed", // Confermato subito per chi testa in singolo
     };
 
-    try {
-      const { error } = await supabase.from("room_picks").insert(newPick);
-      if (error) throw error;
-    } catch {
-      setPicks((prev) => [...prev, { ...newPick, id: "local_" + Date.now() }]);
+    // Aggiornamento ottimistico immediato
+    setPicks((prev) => [...prev, newPick]);
+    showToast(`✅ ${selection} aggiunto alla schedina!`);
+
+    const { data, error } = await supabase.from("room_picks").insert({
+      room_id: roomId,
+      match_id: match.id,
+      match_label: newPick.match_label,
+      market,
+      selection,
+      odds,
+      proposed_by: nick,
+      votes: newPick.votes,
+      status: "confirmed",
+    }).select().single();
+
+    if (data && !error) {
+      setPicks((prev) => prev.map((p) => (p.id === tempId ? data : p)));
     }
   };
 
@@ -92,171 +111,378 @@ export default function RoomPage() {
     if (up >= 2 && up > down) status = "confirmed";
     if (down >= 2 && down > up) status = "rejected";
 
-    try {
-      const { error } = await supabase.from("room_picks").update({ votes: currentVotes, status }).eq("id", pick.id);
-      if (error) throw error;
-    } catch {
-      setPicks((prev) => prev.map((p) => (p.id === pick.id ? { ...p, votes: currentVotes, status } : p)));
-    }
+    // Aggiornamento locale immediato
+    setPicks((prev) => prev.map((p) => (p.id === pick.id ? { ...p, votes: currentVotes, status } : p)));
+
+    await supabase.from("room_picks").update({ votes: currentVotes, status }).eq("id", pick.id);
+  };
+
+  const removePick = async (id: string) => {
+    setPicks((prev) => prev.filter((p) => p.id !== id));
+    await supabase.from("room_picks").delete().eq("id", id);
+    showToast("🗑️ Quota rimossa");
   };
 
   const confirmed = picks.filter((p) => p.status === "confirmed");
+  const pending = picks.filter((p) => p.status === "pending");
   const totalOdds = confirmed.reduce((acc, p) => acc * Number(p.odds), 1).toFixed(2);
 
-  const shareWA = () => {
-    const text = `🔥 Entra nella stanza BetSquad!\nQuota attuale: *${totalOdds}* su ${confirmed.length} eventi.\nVota o aggiungi le tue partite qui:\n${window.location.href}`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+  const isSelected = (matchId: string, sel: string) => {
+    return picks.some((p) => p.match_id === matchId && p.selection === sel && p.status !== "rejected");
+  };
+
+  const shareLink = () => {
+    const url = window.location.href;
+    if (navigator.share) {
+      navigator.share({ title: "Oddspedia Squad", url });
+    } else {
+      navigator.clipboard.writeText(url);
+      showToast("📋 Link copiato negli appunti!");
+    }
   };
 
   return (
-    <div className="min-h-screen bg-[#090d14] text-slate-100 pb-20">
-      <header className="sticky top-0 z-30 bg-[#090d14]/90 backdrop-blur border-b border-slate-800 p-4">
-        <div className="max-w-3xl mx-auto flex justify-between items-center">
-          <div>
-            <h1 className="text-lg font-black">⚽ Bet<span className="text-[#00e676]">Squad</span></h1>
-            <p className="text-[11px] text-slate-400">Stanza: <b className="text-slate-200">{roomId}</b></p>
+    <div className="min-h-screen bg-[#0b141f] text-[#e5edf5] pb-24">
+      {/* Toast Alert Flottante */}
+      {toast && (
+        <div className="fixed top-14 left-1/2 -translate-x-1/2 z-50 bg-[#0084ff] text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg border border-white/20 animate-fade-in">
+          {toast}
+        </div>
+      )}
+
+      {/* Top Bar Header */}
+      <header className="bg-[#111d2b] border-b border-white/[0.08] sticky top-0 z-30 shadow-md">
+        <div className="max-w-5xl mx-auto px-4 h-12 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="bg-[#0084ff] text-white font-black text-xs px-2 py-0.5 rounded tracking-wide">ODDS</span>
+            <span className="text-xs font-mono text-neutral-400">ROOM // {roomId}</span>
           </div>
-          <button onClick={shareWA} className="bg-[#25D366] text-[#062b16] font-bold px-3 py-1.5 rounded-lg text-xs">
-            💬 WhatsApp
-          </button>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-neutral-300 font-medium">👤 {nick}</span>
+            <button
+              onClick={shareLink}
+              className="bg-[#162436] border border-white/[0.12] hover:border-[#0084ff] text-xs font-semibold px-2.5 py-1 rounded transition cursor-pointer"
+            >
+              Condividi
+            </button>
+          </div>
         </div>
       </header>
 
-      <div className="max-w-3xl mx-auto p-4">
-        <div className="flex gap-2 border-b border-slate-800 pb-2 mb-4 overflow-x-auto">
-          {(["palinsesto", "voti", "schedina", "comparatore"] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setActiveTab(t)}
-              className={`px-3 py-1.5 rounded-full text-xs font-bold capitalize whitespace-nowrap ${
-                activeTab === t ? "bg-[#00e676] text-black" : "bg-[#151f30] text-slate-400"
-              }`}
-            >
-              {t} {t === "schedina" && `(${confirmed.length})`}
-            </button>
-          ))}
+      {/* Main Content */}
+      <main className="max-w-5xl mx-auto px-3 sm:px-4 pt-4">
+        {/* Navigation Tabs */}
+        <div className="flex border-b border-white/[0.1] mb-4 gap-4 text-xs font-bold uppercase tracking-wider overflow-x-auto">
+          <button
+            onClick={() => setActiveTab("palinsesto")}
+            className={`pb-2.5 transition whitespace-nowrap cursor-pointer ${activeTab === "palinsesto" ? "text-[#0084ff] border-b-2 border-[#0084ff]" : "text-neutral-400 hover:text-white"}`}
+          >
+            Tutte le Quote
+          </button>
+          <button
+            onClick={() => setActiveTab("schedina")}
+            className={`pb-2.5 flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${activeTab === "schedina" ? "text-[#0084ff] border-b-2 border-[#0084ff]" : "text-neutral-400 hover:text-white"}`}
+          >
+            Schedina Squad
+            <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-mono">
+              {confirmed.length}
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveTab("voti")}
+            className={`pb-2.5 flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${activeTab === "voti" ? "text-[#0084ff] border-b-2 border-[#0084ff]" : "text-neutral-400 hover:text-white"}`}
+          >
+            Votazioni
+            {pending.length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 font-mono">
+                {pending.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab("comparatore")}
+            className={`pb-2.5 transition whitespace-nowrap cursor-pointer ${activeTab === "comparatore" ? "text-[#0084ff] border-b-2 border-[#0084ff]" : "text-neutral-400 hover:text-white"}`}
+          >
+            Comparatore Bookmaker
+          </button>
         </div>
 
+        {/* Tab 1: PALINSESTO */}
         {activeTab === "palinsesto" && (
-          <div className="space-y-3">
-            {loading ? (
-              <p className="text-xs text-slate-500 text-center py-10">Caricamento quote reali...</p>
-            ) : matches.length === 0 ? (
-              <p className="text-xs text-slate-500 text-center py-10">Nessun match al momento disponibile.</p>
-            ) : (
-              matches.map((m) => (
-                <div key={m.id} className="bg-[#151f30] border border-slate-800 rounded-xl p-4">
-                  <div className="flex justify-between text-xs text-slate-400 mb-2">
-                    <span>Serie A</span>
-                    <span>{new Date(m.commence_time).toLocaleDateString("it-IT", { weekday: "short", hour: "2-digit", minute: "2-digit" })}</span>
-                  </div>
-                  <div className="font-bold text-sm mb-3">{m.home} vs {m.away}</div>
-                  
-                  <div className="grid grid-cols-3 gap-2">
-                    {Object.entries(m.odds1X2 || {}).map(([lbl, val]: any) => (
-                      <button
-                        key={lbl}
-                        onClick={() => proposePick(m, "1X2", lbl, Number(val))}
-                        className="bg-[#0f1724] border border-slate-800 hover:border-[#00e676] p-2 rounded-lg text-center"
-                      >
-                        <span className="text-[10px] text-slate-400 block">{lbl}</span>
-                        <span className="text-xs font-bold text-[#00e676]">@{Number(val).toFixed(2)}</span>
-                      </button>
-                    ))}
-                  </div>
+          <div>
+            <div className="bg-[#111d2b] border border-white/[0.08] rounded-t-md px-4 py-2.5 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm">🇮🇹</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-white">Italia: Serie A</span>
+              </div>
+              <div className="flex items-center gap-1 bg-[#0b141f] p-0.5 rounded border border-white/[0.08] text-[11px] font-bold">
+                {(["1X2", "UO", "COMBO"] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setMarketFilter(m)}
+                    className={`px-2 py-0.5 rounded cursor-pointer transition ${marketFilter === m ? "bg-[#0084ff] text-white" : "text-neutral-400 hover:text-white"}`}
+                  >
+                    {m === "UO" ? "Over/Under" : m}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-                  <div className="mt-3 pt-3 border-t border-slate-800/60">
-                    <span className="text-[10px] text-slate-400 block mb-1.5">Combo & Under/Over:</span>
-                    <div className="flex gap-2 overflow-x-auto">
-                      {Object.entries(m.derived?.combo || {}).slice(0, 3).map(([cName, cVal]: any) => (
-                        <button
-                          key={cName}
-                          onClick={() => proposePick(m, "Combo", cName, Number(cVal))}
-                          className="bg-[#0f1724] border border-slate-800 hover:border-[#00e676] px-2.5 py-1.5 rounded-lg whitespace-nowrap text-left"
-                        >
-                          <span className="text-[10px] text-slate-300 block">{cName}</span>
-                          <span className="text-xs font-bold text-[#00e676]">@{cVal}</span>
-                        </button>
-                      ))}
+            <div className="bg-[#162436] border-x border-white/[0.08] px-4 py-1.5 grid grid-cols-12 text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
+              <div className="col-span-6 sm:col-span-7">Partita & Data</div>
+              <div className="col-span-6 sm:col-span-5 grid grid-cols-3 text-center">
+                {marketFilter === "1X2" ? (
+                  <><span>1</span><span>X</span><span>2</span></>
+                ) : marketFilter === "UO" ? (
+                  <><span>Over 2.5</span><span>-</span><span>Under 2.5</span></>
+                ) : (
+                  <><span>1 + Ov</span><span>X + Un</span><span>2 + Ov</span></>
+                )}
+              </div>
+            </div>
+
+            <div className="border border-white/[0.08] rounded-b-md divide-y divide-white/[0.05] bg-[#111d2b]">
+              {loading ? (
+                <div className="p-8 text-center text-xs text-neutral-400">Caricamento quote in tempo reale...</div>
+              ) : matches.length === 0 ? (
+                <div className="p-8 text-center text-xs text-neutral-400">Nessun match al momento programmato.</div>
+              ) : (
+                matches.map((m) => (
+                  <div key={m.id} className="px-4 py-2.5 grid grid-cols-12 items-center hover:bg-[#162436]/60 transition">
+                    <div className="col-span-6 sm:col-span-7 pr-2">
+                      <div className="text-[10px] font-mono text-neutral-400 mb-0.5">
+                        {new Date(m.commence_time).toLocaleDateString("it-IT", { weekday: "short", hour: "2-digit", minute: "2-digit" })}
+                      </div>
+                      <div className="text-xs font-bold text-white leading-tight">{m.home}</div>
+                      <div className="text-xs font-bold text-white leading-tight">{m.away}</div>
+                    </div>
+
+                    <div className="col-span-6 sm:col-span-5 grid grid-cols-3 gap-1.5">
+                      {marketFilter === "1X2" && (
+                        <>
+                          {(["1", "X", "2"] as const).map((lbl) => {
+                            const val = Number(m.odds1X2?.[lbl] || (lbl === "1" ? 2.05 : lbl === "X" ? 3.2 : 3.4));
+                            const selected = isSelected(m.id, lbl);
+                            return (
+                              <button
+                                key={lbl}
+                                onClick={() => proposePick(m, "1X2", lbl, val)}
+                                className={`py-2 rounded text-center transition cursor-pointer border ${
+                                  selected
+                                    ? "bg-[#0084ff] border-white text-white shadow-md"
+                                    : "bg-[#1c2c42] hover:bg-[#253954] border-white/[0.08] text-[#f59e0b]"
+                                }`}
+                              >
+                                <span className="block text-xs font-bold font-mono tabular-nums">
+                                  {val.toFixed(2)}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </>
+                      )}
+
+                      {marketFilter === "UO" && (
+                        <>
+                          <button
+                            onClick={() => proposePick(m, "U/O", "Over 2.5", Number(m.derived?.uo?.["Over 2.5"] || 1.85))}
+                            className={`py-2 rounded text-center transition cursor-pointer border ${
+                              isSelected(m.id, "Over 2.5")
+                                ? "bg-[#0084ff] border-white text-white"
+                                : "bg-[#1c2c42] hover:bg-[#253954] border-white/[0.08] text-[#f59e0b]"
+                            }`}
+                          >
+                            <span className="block text-xs font-bold font-mono tabular-nums">
+                              {m.derived?.uo?.["Over 2.5"] || "1.85"}
+                            </span>
+                          </button>
+                          <div className="flex items-center justify-center text-neutral-600 text-xs font-bold">-</div>
+                          <button
+                            onClick={() => proposePick(m, "U/O", "Under 2.5", Number(m.derived?.uo?.["Under 2.5"] || 1.95))}
+                            className={`py-2 rounded text-center transition cursor-pointer border ${
+                              isSelected(m.id, "Under 2.5")
+                                ? "bg-[#0084ff] border-white text-white"
+                                : "bg-[#1c2c42] hover:bg-[#253954] border-white/[0.08] text-[#f59e0b]"
+                            }`}
+                          >
+                            <span className="block text-xs font-bold font-mono tabular-nums">
+                              {m.derived?.uo?.["Under 2.5"] || "1.95"}
+                            </span>
+                          </button>
+                        </>
+                      )}
+
+                      {marketFilter === "COMBO" && (
+                        <>
+                          {(["1 + Over 2.5", "X + Under 2.5", "2 + Over 2.5"] as const).map((cKey) => {
+                            const cVal = Number(m.derived?.combo?.[cKey] || 3.5);
+                            const selected = isSelected(m.id, cKey);
+                            return (
+                              <button
+                                key={cKey}
+                                onClick={() => proposePick(m, "Combo", cKey, cVal)}
+                                className={`py-2 rounded text-center transition cursor-pointer border ${
+                                  selected
+                                    ? "bg-[#0084ff] border-white text-white"
+                                    : "bg-[#1c2c42] hover:bg-[#253954] border-white/[0.08] text-[#f59e0b]"
+                                }`}
+                              >
+                                <span className="block text-xs font-bold font-mono tabular-nums">{cVal.toFixed(2)}</span>
+                              </button>
+                            );
+                          })}
+                        </>
+                      )}
                     </div>
                   </div>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-
-        {activeTab === "voti" && (
-          <div className="space-y-3">
-            {picks.filter((p) => p.status === "pending").length === 0 ? (
-              <p className="text-xs text-slate-500 text-center py-10">Nessuna proposta in attesa di voto.</p>
-            ) : (
-              picks.filter((p) => p.status === "pending").map((p) => (
-                <div key={p.id} className="bg-[#151f30] border border-slate-800 rounded-xl p-4">
-                  <div className="flex justify-between font-bold text-xs mb-1">
-                    <span>{p.match_label}</span>
-                    <span className="text-[#00e676]">@{p.odds}</span>
-                  </div>
-                  <div className="text-xs text-slate-400 mb-3">{p.selection} (proposta da {p.proposed_by})</div>
-                  <div className="flex gap-2">
-                    <button onClick={() => votePick(p, 1)} className="bg-[#0f1724] border border-slate-700 px-3 py-1 rounded text-xs">
-                      👍 {Object.values(p.votes).filter((v: any) => v > 0).length}
-                    </button>
-                    <button onClick={() => votePick(p, -1)} className="bg-[#0f1724] border border-slate-700 px-3 py-1 rounded text-xs">
-                      👎 {Object.values(p.votes).filter((v: any) => v < 0).length}
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-
-        {activeTab === "schedina" && (
-          <div className="bg-[#151f30] border border-slate-800 rounded-xl p-4 space-y-3">
-            <h3 className="text-sm font-bold border-b border-slate-800 pb-2">Eventi Confermati dal Gruppo</h3>
-            {confirmed.map((c) => (
-              <div key={c.id} className="flex justify-between items-center text-xs py-1 border-b border-slate-800/40">
-                <span>{c.match_label} — <b>{c.selection}</b></span>
-                <span className="text-[#00e676] font-bold">@{c.odds}</span>
-              </div>
-            ))}
-            <div className="flex justify-between items-center pt-2 text-sm font-bold">
-              <span>Quota Totale:</span>
-              <span className="text-[#00e676] text-xl">@{totalOdds}</span>
+                ))
+              )}
             </div>
           </div>
         )}
 
-        {activeTab === "comparatore" && (
-          <div className="space-y-3">
-            {[
-              { name: "Sisal", aff: "https://www.sisal.it?aff_id=BETSQUAD", bonus: 1.05 },
-              { name: "Snai", aff: "https://www.snai.it?aff_id=BETSQUAD", bonus: 1.04 },
-              { name: "GoldBet", aff: "https://www.goldbet.it?aff_id=BETSQUAD", bonus: 1.03 },
-            ].map((b) => (
-              <div key={b.name} className="bg-[#151f30] border border-slate-800 p-4 rounded-xl flex justify-between items-center">
-                <div>
-                  <div className="font-bold text-sm">{b.name}</div>
-                  <div className="text-xs text-slate-400">Vincita su 10€: <b className="text-[#00e676]">{(10 * Number(totalOdds) * b.bonus).toFixed(2)}€</b></div>
+        {/* Tab 2: SCHEDINA SQUAD */}
+        {activeTab === "schedina" && (
+          <div className="bg-[#111d2b] border border-white/[0.08] rounded p-4">
+            <div className="border-b border-white/[0.08] pb-2 mb-3 flex justify-between items-center">
+              <span className="text-xs font-bold uppercase tracking-wider text-white">Eventi in Schedina</span>
+              <span className="text-xs text-neutral-400 font-mono">{confirmed.length} selezionati</span>
+            </div>
+
+            {confirmed.length === 0 ? (
+              <div className="text-xs text-neutral-400 py-8 text-center">
+                La schedina è ancora vuota. Clicca sulle quote nel palinsesto per aggiungerle.
+              </div>
+            ) : (
+              <div className="divide-y divide-white/[0.05]">
+                {confirmed.map((c) => (
+                  <div key={c.id} className="py-2.5 flex justify-between items-center text-xs">
+                    <div>
+                      <span className="font-bold text-white">{c.match_label}</span>
+                      <span className="text-[#0084ff] font-bold ml-2">[{c.selection}]</span>
+                      <span className="text-[10px] text-neutral-500 block">Proposto da: {c.proposed_by}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono font-bold text-[#f59e0b] tabular-nums text-sm">@{Number(c.odds).toFixed(2)}</span>
+                      <button onClick={() => removePick(c.id)} className="text-neutral-500 hover:text-rose-400 text-xs px-1 cursor-pointer">
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <div className="pt-4 mt-2 flex justify-between items-baseline font-bold">
+                  <span className="text-xs uppercase text-neutral-300">Quota Totale Schedina</span>
+                  <span className="text-xl font-mono text-[#10b981] tabular-nums">@{totalOdds}</span>
                 </div>
-                <a href={b.aff} target="_blank" rel="noopener" className="bg-[#00e676] text-[#04220f] px-3 py-1.5 rounded-lg text-xs font-bold">
-                  Scommetti ↗
-                </a>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab 3: VOTAZIONI */}
+        {activeTab === "voti" && (
+          <div className="space-y-3">
+            {pending.length === 0 ? (
+              <div className="bg-[#111d2b] border border-white/[0.08] rounded p-8 text-center text-xs text-neutral-400">
+                Nessuna proposta in attesa di voto. Tutte le giocate confermate sono visibili in "Schedina Squad".
+              </div>
+            ) : (
+              pending.map((p) => {
+                const up = Object.values(p.votes || {}).filter((v: any) => v > 0).length;
+                const down = Object.values(p.votes || {}).filter((v: any) => v < 0).length;
+                return (
+                  <div key={p.id} className="bg-[#111d2b] border border-white/[0.08] rounded p-3 flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-bold text-white">{p.match_label}</div>
+                      <div className="text-[11px] text-neutral-400">
+                        Pronostico: <span className="text-[#0084ff] font-bold">{p.selection}</span> ({p.market})
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-sm font-bold text-[#f59e0b] tabular-nums">@{Number(p.odds).toFixed(2)}</span>
+                      <div className="flex gap-1.5">
+                        <button
+                          onClick={() => votePick(p, 1)}
+                          className={`px-3 py-1 rounded text-xs font-bold transition cursor-pointer ${
+                            p.votes?.[nick] === 1 ? "bg-[#10b981] text-white" : "bg-[#162436] text-neutral-300 hover:bg-[#22354c]"
+                          }`}
+                        >
+                          👍 {up}
+                        </button>
+                        <button
+                          onClick={() => votePick(p, -1)}
+                          className={`px-3 py-1 rounded text-xs font-bold transition cursor-pointer ${
+                            p.votes?.[nick] === -1 ? "bg-rose-600 text-white" : "bg-[#162436] text-neutral-300 hover:bg-[#22354c]"
+                          }`}
+                        >
+                          👎 {down}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+
+        {/* Tab 4: COMPARATORE */}
+        {activeTab === "comparatore" && (
+          <div className="space-y-2">
+            <div className="bg-[#162436] border border-white/[0.08] rounded px-4 py-2 text-[11px] font-bold text-neutral-400 uppercase grid grid-cols-12">
+              <div className="col-span-5">Operatore ADM</div>
+              <div className="col-span-4 text-center">Vincita su 10€</div>
+              <div className="col-span-3 text-right">Azione</div>
+            </div>
+
+            {[
+              { name: "Sisal.it", bonus: 1.05, link: "https://www.sisal.it" },
+              { name: "Snai.it", bonus: 1.04, link: "https://www.snai.it" },
+              { name: "GoldBet", bonus: 1.03, link: "https://www.goldbet.it" },
+            ].map((b) => (
+              <div key={b.name} className="bg-[#111d2b] border border-white/[0.08] hover:border-[#0084ff] rounded px-4 py-3 grid grid-cols-12 items-center transition">
+                <div className="col-span-5 font-bold text-xs text-white">{b.name}</div>
+                <div className="col-span-4 text-center font-mono font-bold text-xs text-[#10b981] tabular-nums">
+                  {(10 * Number(totalOdds) * b.bonus).toFixed(2)} €
+                </div>
+                <div className="col-span-3 text-right">
+                  <a
+                    href={b.link}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="bg-[#0084ff] hover:bg-[#0073e6] text-white font-bold text-[11px] px-3 py-1.5 rounded transition uppercase tracking-wider"
+                  >
+                    Scommetti ↗
+                  </a>
+                </div>
               </div>
             ))}
           </div>
         )}
-      </div>
+      </main>
 
-      <div className="fixed bottom-0 left-0 right-0 bg-[#0f1724]/95 border-t border-slate-800 p-3 flex justify-between items-center max-w-3xl mx-auto">
-        <div className="text-xs text-slate-400">
-          Eventi: <b className="text-white">{confirmed.length}</b> | Quota: <b className="text-[#00e676]">@{totalOdds}</b>
+      {/* Footer Fisso */}
+      <footer className="fixed bottom-0 left-0 right-0 bg-[#111d2b]/95 backdrop-blur-md border-t border-white/[0.1] px-4 py-2.5 z-40">
+        <div className="max-w-5xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-4 text-xs font-bold">
+            <div>
+              <span className="text-neutral-400 block text-[10px] uppercase">Selezioni</span>
+              <span className="text-white font-mono">{confirmed.length}</span>
+            </div>
+            <div className="h-6 w-[1px] bg-white/[0.1]" />
+            <div>
+              <span className="text-neutral-400 block text-[10px] uppercase">Quota Totale</span>
+              <span className="text-[#10b981] font-mono text-sm">@{totalOdds}</span>
+            </div>
+          </div>
+          <button
+            onClick={() => setActiveTab("schedina")}
+            className="bg-[#0084ff] hover:bg-[#0073e6] text-white font-bold text-xs uppercase tracking-wider px-4 py-2 rounded transition cursor-pointer"
+          >
+            Vedi Schedina ({confirmed.length})
+          </button>
         </div>
-        <button onClick={() => setActiveTab("schedina")} className="bg-[#00e676] text-black font-bold px-3 py-1.5 rounded-lg text-xs">
-          Vedi Schedina
-        </button>
-      </div>
+      </footer>
     </div>
   );
 }

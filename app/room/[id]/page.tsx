@@ -27,6 +27,7 @@ export default function RoomPage() {
   const [tempNick, setTempNick] = useState<string>("Giocatore");
   const [toast, setToast] = useState<string | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const [showRulesModal, setShowRulesModal] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const channelRef = useRef<any>(null);
@@ -226,29 +227,65 @@ export default function RoomPage() {
     return picks.some((p) => p.match_id === matchId && p.market === market && p.selection === sel && p.status !== "rejected");
   };
 
+  // LOGICA BOOKMAKER: Sostituzione Automatica della quota dello stesso match
   const handlePickAction = async (match: any, market: string, selection: string, odds: number) => {
-    const existingSameSelection = picks.find((p) => p.match_id === match.id && p.market === market && p.selection === selection);
-
-    if (existingSameSelection) {
+    const existingSame = picks.find((p) => p.match_id === match.id && p.market === market && p.selection === selection);
+    
+    // 1. Deselezione al secondo tocco
+    if (existingSame) {
       if (betMode === "libera") {
-        removePick(existingSameSelection.id);
+        removePick(existingSame.id);
         return;
       } else {
-        showToast("⚠️ Quota già registrata in votazione.");
+        showToast("⚠️ Quota già proposta in votazione.");
         return;
       }
     }
 
-    const existingMatchPick = picks.find((p) => p.match_id === match.id && p.market === market);
+    const isDirect = betMode === "libera";
+    const initialStatus = isDirect ? "confirmed" : "pending";
+
+    // 2. SOSTITUZIONE AUTOMATICA: Se c'è già un pronostico su questa partita, lo sostituisce direttamente
+    const existingMatchPick = picks.find((p) => p.match_id === match.id && p.status !== "rejected");
+
     if (existingMatchPick) {
-      showToast(`⚠️ C'è già una giocata su questo mercato (${market})!`);
+      // Aggiornamento in-place
+      const updatedPick = {
+        ...existingMatchPick,
+        market,
+        selection,
+        odds,
+        proposed_by: nick,
+        status: initialStatus
+      };
+
+      setPicks((prev) => prev.map((p) => (p.id === existingMatchPick.id ? updatedPick : p)));
+      showToast(`🔄 Sostituito: ${selection} (${market})`);
+
+      try {
+        await supabase
+          .from("room_picks")
+          .update({
+            market,
+            selection,
+            odds,
+            proposed_by: nick,
+            status: initialStatus
+          })
+          .eq("id", existingMatchPick.id);
+      } catch {}
       return;
     }
 
-    const isDirect = betMode === "libera";
-    const initialStatus = isDirect ? "confirmed" : "pending";
-    const tempId = `pick_${Date.now()}`;
+    // 3. Controllo limite massimo 30 eventi
+    const activePicks = picks.filter((p) => p.status !== "rejected");
+    if (activePicks.length >= 30) {
+      showToast("⛔ Limite massimo di 30 eventi per schedina raggiunto!");
+      return;
+    }
 
+    // 4. Inserimento nuovo evento
+    const tempId = `pick_${Date.now()}`;
     const newPick = {
       id: tempId,
       room_id: roomId,
@@ -264,7 +301,7 @@ export default function RoomPage() {
     };
 
     setPicks((prev) => [...prev, newPick]);
-    showToast(isDirect ? `✅ Aggiunta: ${selection}` : `🗳️ Proposta: ${selection}`);
+    showToast(isDirect ? `✅ Inserito: ${selection}` : `🗳️ Proposta: ${selection}`);
 
     const { data, error } = await supabase.from("room_picks").insert({
       room_id: roomId,
@@ -325,15 +362,20 @@ export default function RoomPage() {
   const confirmed = picks.filter((p) => p.status === "confirmed");
   const pending = picks.filter((p) => p.status === "pending");
 
+  // ALGORITMO UFFICIALE DI CALCOLO LOTTOMATICA / ADM:
   const rawMultiplier = confirmed.reduce((acc, p) => acc * Number(p.odds), 1);
   const totalOdds = confirmed.length > 0 ? (Math.round(rawMultiplier * 100) / 100).toFixed(2) : "0.00";
 
+  // Bonus Multipla: Quote >= 1.25, attivo dal 5° evento (+5%, poi +5% ogni evento successivo)
   const qualifyingEvents = confirmed.filter((p) => Number(p.odds) >= 1.25).length;
   const bonusPct = qualifyingEvents >= 5 ? (qualifyingEvents - 4) * 5 : 0;
   const bonusMultiplier = 1 + bonusPct / 100;
 
-  const baseWin = confirmed.length > 0 ? Number(stake) * Number(totalOdds) : 0;
-  const potentialWin = confirmed.length > 0 ? (Math.round(baseWin * bonusMultiplier * 100) / 100).toFixed(2) : "0.00";
+  const rawPotentialWin = confirmed.length > 0 ? Number(stake) * Number(totalOdds) * bonusMultiplier : 0;
+  // Cap Vincita di Legge ADM / Lottomatica: Max 50.000,00 €
+  const isCapped = rawPotentialWin > 50000;
+  const potentialWin = confirmed.length > 0 ? (Math.min(50000, Math.round(rawPotentialWin * 100) / 100)).toFixed(2) : "0.00";
+  const baseWin = confirmed.length > 0 ? (Math.round(Number(stake) * Number(totalOdds) * 100) / 100) : 0;
 
   const safeParticipants = Math.max(1, participantsCount);
   const stakePerHead = (stake / safeParticipants).toFixed(2);
@@ -349,7 +391,7 @@ export default function RoomPage() {
       `\n\n💰 Quota Totale: @${totalOdds}` +
       (bonusPct > 0 ? `\n🎁 Bonus Multipla: +${bonusPct}%` : "") +
       `\n💵 Puntata: ${stake}€ (Vincita a testa: ${winPerHead}€)` +
-      `\n🏆 Vincita Totale: ${potentialWin}€` +
+      `\n🏆 Vincita Totale: ${potentialWin}€` + (isCapped ? " (Massimale ADM 50.000€)" : "") +
       `\n🔗 Entra nella stanza: ${window.location.href}`;
 
     navigator.clipboard.writeText(text);
@@ -504,9 +546,59 @@ export default function RoomPage() {
     <div className="min-h-screen bg-[var(--bg-main)] text-[var(--text-main)] pb-24 font-sans antialiased select-none">
       <canvas ref={canvasRef} className="hidden" />
 
+      {/* Toast Notifica riposizionato per non coprire gli input */}
       {toast && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-[#0084ff] text-white text-[11px] font-bold px-4 py-2 rounded-full shadow-2xl border border-white/20">
           {toast}
+        </div>
+      )}
+
+      {/* MODAL REGOLE & TERMINI ADM */}
+      {showRulesModal && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setShowRulesModal(false)}
+        >
+          <div 
+            className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-xl max-w-lg w-full p-5 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-2">
+              <span className="font-black text-sm uppercase tracking-wider text-white">⚖️ Regolamento Scommesse ADM</span>
+              <button 
+                onClick={() => setShowRulesModal(false)} 
+                className="text-sm font-bold text-[var(--text-muted)] hover:text-white px-2 py-0.5 rounded bg-[var(--surface-quote)] cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs leading-relaxed text-[var(--text-muted)]">
+              <div>
+                <h4 className="font-bold text-white uppercase text-[11px]">1. Importi di Puntata e Vincita Massima</h4>
+                <p>La puntata minima ammessa è di <strong>1,00 €</strong>. Il massimale di vincita per singolo biglietto (singola o multipla) è fissato a <strong>€ 50.000,00</strong> a norma di legge ADM.</p>
+              </div>
+              <div>
+                <h4 className="font-bold text-white uppercase text-[11px]">2. Incompatibilità e Sostituzione Esiti</h4>
+                <p>Non è consentito combinare esiti correlati dello stesso evento. Selezionando un nuovo mercato per lo stesso incontro, il sistema effettua la <strong>sostituzione automatica</strong> della quota.</p>
+              </div>
+              <div>
+                <h4 className="font-bold text-white uppercase text-[11px]">3. Bonus Multipla Progressivo</h4>
+                <p>Partecipano al bonus solo gli eventi con <strong>quota pari o superiore a 1.25</strong>. Il bonus si attiva dal 5° evento valido (+5%) e incrementa del +5% per ogni evento successivo fino a 30 selezioni.</p>
+              </div>
+              <div>
+                <h4 className="font-bold text-white uppercase text-[11px]">4. Avvenimenti Annullati o Rinviati (Quota 1.00)</h4>
+                <p>Qualora un incontro venga posticipato e non disputato entro i termini ufficiali, la selezione viene considerata nulla e calcolata a <strong>quota 1.00</strong> senza invalidare il resto della multipla.</p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowRulesModal(false)}
+              className="w-full py-2 bg-[#0084ff] text-white text-xs font-bold uppercase rounded-lg cursor-pointer"
+            >
+              Ho Capito
+            </button>
+          </div>
         </div>
       )}
 
@@ -538,7 +630,15 @@ export default function RoomPage() {
           />
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            onClick={() => setShowRulesModal(true)}
+            className="h-9 px-2.5 rounded-lg bg-[var(--surface-quote)] border border-[var(--border-subtle)] text-xs font-bold hover:border-[#0084ff] transition cursor-pointer shadow-sm flex items-center gap-1"
+            title="Consulta le regole ufficiali ADM"
+          >
+            <span>⚖️</span>
+            <span className="hidden sm:inline text-[11px]">Regole</span>
+          </button>
           <button
             onClick={exportStoryCard}
             className="w-9 h-9 flex items-center justify-center rounded-lg bg-[var(--surface-quote)] border border-[var(--border-subtle)] text-base hover:border-[#0084ff] transition cursor-pointer shadow-sm active:scale-95"
@@ -638,7 +738,7 @@ export default function RoomPage() {
         </button>
       </div>
 
-      {/* Selettore Competizioni Mobile a Scorrimento */}
+      {/* Selettore Competizioni Mobile */}
       {activeTab === "palinsesto" && (
         <div className="md:hidden bg-[var(--surface-card)] border-b border-[var(--border-subtle)] px-2.5 py-2 overflow-x-auto flex gap-1.5 no-scrollbar">
           {competitions.map((comp) => (
@@ -658,11 +758,11 @@ export default function RoomPage() {
         </div>
       )}
 
-      {/* Main Layout */}
+      {/* Main Layout SNAI Style */}
       <main className="p-2 sm:p-4 w-full">
         {activeTab === "palinsesto" && (
           <div className="flex flex-col md:flex-row gap-3 items-start w-full">
-            {/* SIDEBAR DESKTOP ALTRE COMPETIZIONI */}
+            {/* Sidebar Desktop Altre Competizioni */}
             <aside className="hidden md:block w-64 shrink-0 bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-3 shadow-sm">
               <div className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)] pb-2 mb-2 border-b border-[var(--border-subtle)] flex items-center justify-between">
                 <span>Altre Competizioni</span>
@@ -689,7 +789,7 @@ export default function RoomPage() {
               </div>
             </aside>
 
-            {/* TABELLA PALINSESTO */}
+            {/* Tabella Palinsesto */}
             <div className="flex-1 min-w-0 w-full space-y-3">
               <div className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shadow-sm">
                 <div className="flex items-center gap-2">
@@ -955,14 +1055,22 @@ export default function RoomPage() {
           </div>
         )}
 
-        {/* Tab 3: Schedina Squad con Comparatore Bookmaker Integrato */}
+        {/* Tab 3: Schedina Squad con Regolamento Completo */}
         {activeTab === "schedina" && (
           <div className="max-w-4xl mx-auto bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-3 sm:p-5 shadow-sm space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-[var(--border-subtle)]">
-              <span className="text-xs font-bold uppercase tracking-wider">Schedina ({confirmed.length})</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold uppercase tracking-wider">Schedina Squad ({confirmed.length}/30)</span>
+                <button
+                  onClick={() => setShowRulesModal(true)}
+                  className="text-[10px] text-[#0084ff] underline cursor-pointer"
+                >
+                  Regolamento ADM
+                </button>
+              </div>
               <div className="flex items-center gap-1 bg-[var(--bg-main)] p-1 rounded border border-[var(--border-subtle)]">
                 <span className="text-[10px] text-[var(--text-muted)]">Puntata:</span>
-                {[2, 5, 10, 20, 50].map((val) => (
+                {[1, 2, 5, 10, 20, 50].map((val) => (
                   <button
                     key={val}
                     onClick={() => setStake(val)}
@@ -1004,13 +1112,18 @@ export default function RoomPage() {
                   </div>
                   {bonusPct > 0 && (
                     <div className="flex justify-between text-amber-500">
-                      <span>Bonus ADM (+{bonusPct}%):</span>
+                      <span>Bonus Multipla ({qualifyingEvents} eventi ≥ 1.25: +{bonusPct}%):</span>
                       <span className="font-mono font-bold">+{((Number(potentialWin) - baseWin)).toFixed(2)} €</span>
                     </div>
                   )}
 
                   <div className="flex justify-between items-baseline pt-2 border-t border-[var(--border-subtle)]">
-                    <span className="font-bold uppercase text-xs">Potenziale Vincita Base ({stake}€):</span>
+                    <div>
+                      <span className="font-bold uppercase text-xs block">Potenziale Vincita ({stake}€):</span>
+                      {isCapped && (
+                        <span className="text-[10px] text-amber-500 font-bold">Massimale di legge ADM € 50.000,00 raggiunto</span>
+                      )}
+                    </div>
                     <span className="text-2xl font-mono font-black text-emerald-500">{potentialWin} €</span>
                   </div>
 
@@ -1028,7 +1141,7 @@ export default function RoomPage() {
                           </div>
                           <div className="flex items-center sm:w-full sm:justify-between gap-2">
                             <span className="text-sm font-mono font-bold text-emerald-500">
-                              {(Number(potentialWin) * b.bonus).toFixed(2)} €
+                              {(Math.min(50000, Number(potentialWin) * b.bonus)).toFixed(2)} €
                             </span>
                             <a
                               href={b.link}
@@ -1089,7 +1202,7 @@ export default function RoomPage() {
             }`}
           >
             <div className="flex items-center justify-between pb-2 border-b border-[var(--border-subtle)]">
-              <span className="text-xs font-bold uppercase tracking-wider">Schedina Rapida ({confirmed.length})</span>
+              <span className="text-xs font-bold uppercase tracking-wider">Schedina Rapida ({confirmed.length}/30)</span>
               <button
                 onClick={() => setIsSheetOpen(false)}
                 className="text-xs font-bold text-[var(--text-muted)] hover:text-white px-2 py-0.5 rounded bg-[var(--surface-quote)] cursor-pointer"
@@ -1105,7 +1218,7 @@ export default function RoomPage() {
             ) : (
               <div className="divide-y divide-[var(--border-subtle)] py-1.5">
                 {confirmed.map((c) => (
-                  <div key={c.id} className="py-2 flex items-center justify-between text-xs">
+                  <div key={c.id} className="py-1.5 flex items-center justify-between text-xs">
                     <div className="pr-2 truncate">
                       <div className="font-bold truncate">{c.match_label}</div>
                       <div className="text-[10px] text-[#0084ff] font-semibold">{c.selection}</div>
@@ -1123,7 +1236,7 @@ export default function RoomPage() {
                     <span className="text-[var(--text-muted)]">Puntata: {stake}€</span>
                   </div>
                   <div className="flex justify-between items-baseline pt-1 text-emerald-500 font-mono font-black text-base">
-                    <span className="text-xs uppercase font-bold text-[var(--text-muted)]">Vincita Totale:</span>
+                    <span className="text-xs uppercase font-bold text-[var(--text-muted)]">Vincita:</span>
                     <span>{potentialWin} €</span>
                   </div>
 

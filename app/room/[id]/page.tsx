@@ -472,7 +472,7 @@ export default function RoomPage() {
       `⚙️ Regole: ${betMode === "libera" ? "Libera" : "A Voto"}\n` +
       `👥 Partecipanti: ${safeParticipants} (${stakePerHead}€ a testa)\n` +
       `📌 Pronostici (${activeSheetItems.length}):\n` +
-      activeSheetItems.map((c) => `• ${c.match_label}: ${c.selection} [${c.market}] @${Number(c.odds).toFixed(2)}`).join("\n") +
+      activeSheetItems.map((c) => `• ${c.match_label}: ${c.selection} [${c.market}] ${Number(c.odds).toFixed(2)}`).join("\n") +
       `\n\n💰 Quota Totale: ${totalOdds}` +
       (bonusPct > 0 ? `\n🎁 Bonus Multipla: ${bonusPct}%` : "") +
       `\n💵 Puntata: ${stake}€ (Vincita a testa: ${winPerHead}€)` +
@@ -1378,8 +1378,8 @@ export default function RoomPage() {
                   </div>
                   {bonusPct > 0 && (
                     <div className="flex justify-between text-amber-500">
-                      <span>Bonus Multipla ({qualifyingEvents} eventi ≥ 1.25: {bonusPct}%):</span>
-                      <span className="font-mono font-bold">{((Number(potentialWin) - (Number(stake) * Number(totalOdds)))).toFixed(2)} €</span>
+                      <span>Bonus Multipla:</span>
+                      <span className="font-mono font-bold">{Math.abs(Number((Number(potentialWin) - (Number(stake) * Number(totalOdds))).toFixed(2)))} €</span>
                     </div>
                   )}
 

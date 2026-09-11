@@ -39,13 +39,15 @@ export default function Home() {
     setLoading(true);
 
     const roomId = "BET-" + Math.random().toString(36).substring(2, 7).toUpperCase();
-    const finalNick = nick.trim() || "Capitano";
+    const finalNick = nick.trim() || `Player_${Math.floor(1000 + Math.random() * 9000)}`;
+    const finalRoomName = roomName.trim() || `Schedina #${roomId}`;
+    
     localStorage.setItem("bs_nick", finalNick);
 
     try {
       await supabase.from("rooms").insert({
         id: roomId,
-        name: roomName.trim() || `Schedina #${roomId}`,
+        name: finalRoomName,
         host_id: finalNick,
         bet_mode: betMode,
       });
@@ -56,15 +58,18 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[var(--bg-main)] text-[var(--text-main)] flex flex-col font-sans transition-colors duration-200">
-      <header className="bg-[var(--surface-header)] border-b border-[var(--border-subtle)] px-4 py-2.5 shadow-sm">
+      {/* Top Header */}
+      <header className="bg-[var(--surface-header)] border-b border-[var(--border-subtle)] px-4 py-3 shadow-sm">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="bg-[#0084ff] text-white font-black text-xs px-2 py-0.5 rounded tracking-wider">BET</span>
-            <span className="font-extrabold text-sm tracking-tight">SQUAD</span>
-            <span className="text-[11px] font-mono text-[var(--text-muted)] ml-2 pl-2 border-l border-[var(--border-subtle)] hidden sm:inline">
+          {/* Logo BetSquad Ingrandito */}
+          <div className="flex items-center gap-2.5">
+            <span className="bg-[#0084ff] text-white font-black text-sm px-3 py-1 rounded tracking-wider">BET</span>
+            <span className="font-black text-xl tracking-tight">SQUAD</span>
+            <span className="text-xs font-mono text-[var(--text-muted)] ml-2 pl-2 border-l border-[var(--border-subtle)] hidden sm:inline">
               Piattaforma Quote & Multipla Sincronizzata
             </span>
           </div>
+
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -82,15 +87,17 @@ export default function Home() {
         </div>
       </header>
 
-      <div className="bg-[var(--surface-card)] border-b border-[var(--border-subtle)] px-4 py-1.5 overflow-x-auto">
-        <div className="max-w-5xl mx-auto flex items-center gap-4 text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
-          <span className="text-[#0084ff] border-b-2 border-[#0084ff] pb-1 cursor-pointer">⚽ Calcio</span>
-          <span className="hover:text-[var(--text-main)] pb-1 cursor-pointer">🏀 Basket</span>
-          <span className="hover:text-[var(--text-main)] pb-1 cursor-pointer">🎾 Tennis</span>
-          <span className="hover:text-[var(--text-main)] pb-1 cursor-pointer">🏎️ Motori</span>
+      {/* Sub-bar Sport: NON SELEZIONABILI, Calcio neutro senza sottolineature */}
+      <div className="bg-[var(--surface-card)] border-b border-[var(--border-subtle)] px-4 py-2 pointer-events-none select-none">
+        <div className="max-w-5xl mx-auto flex items-center gap-6 text-xs font-medium uppercase tracking-wider text-[var(--text-muted)]">
+          <span>⚽ Calcio</span>
+          <span>🏀 Basket</span>
+          <span>🎾 Tennis</span>
+          <span>🏎️ Motori</span>
         </div>
       </div>
 
+      {/* Form Creazione */}
       <main className="flex-1 flex items-center justify-center p-4">
         <div className="w-full max-w-md bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg shadow-xl overflow-hidden">
           <div className="bg-[var(--surface-sub)] px-5 py-3.5 border-b border-[var(--border-subtle)] flex items-center justify-between">
@@ -104,12 +111,11 @@ export default function Home() {
           <form onSubmit={handleCreate} className="p-5 space-y-4">
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider mb-1.5">
-                Il Tuo Nickname <span className="text-[#0084ff]">*</span>
+                Il Tuo Nickname <span className="text-[11px] font-normal text-[var(--text-muted)] lowercase">(opzionale)</span>
               </label>
               <input
                 type="text"
-                required
-                placeholder="Es. Marco, Fra90, IlMago..."
+                placeholder="Lascia vuoto per casuale (es. Player_7421)"
                 value={nick}
                 onChange={(e) => setNick(e.target.value)}
                 className="w-full h-10 px-3 bg-[var(--bg-main)] border border-[var(--border-strong)] rounded text-sm text-[var(--text-main)] focus:outline-none focus:border-[#0084ff] transition"

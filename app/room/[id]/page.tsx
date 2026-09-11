@@ -472,12 +472,19 @@ export default function RoomPage() {
     showToast("📸 Card Storia scaricata!");
   };
 
+  const bookmakers = [
+    { name: "Sisal.it", bonus: 1.05, link: "https://www.sisal.it" },
+    { name: "Snai.it", bonus: 1.04, link: "https://www.snai.it" },
+    { name: "GoldBet", bonus: 1.03, link: "https://www.goldbet.it" },
+  ];
+
   return (
     <div className="min-h-screen bg-[var(--bg-main)] text-[var(--text-main)] pb-24 font-sans antialiased select-none">
       <canvas ref={canvasRef} className="hidden" />
 
+      {/* Toast Notifica SPOSTATO IN BASSO A TOP-20 PER NON COPRIRE GLI INPUT */}
       {toast && (
-        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 bg-[#0084ff] text-white text-[11px] font-bold px-3 py-1.5 rounded-full shadow-lg border border-white/20">
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-[#0084ff] text-white text-[11px] font-bold px-4 py-2 rounded-full shadow-2xl border border-white/20">
           {toast}
         </div>
       )}
@@ -489,6 +496,7 @@ export default function RoomPage() {
           <span className="font-extrabold text-sm tracking-tight hidden sm:inline">SQUAD</span>
         </div>
 
+        {/* Input nome sessione e nickname */}
         <div className="flex-1 max-w-sm mx-1 flex items-center justify-center gap-1.5">
           <input
             type="text"
@@ -510,7 +518,8 @@ export default function RoomPage() {
           />
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
+        {/* Tasti header ingranditi */}
+        <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={exportStoryCard}
             className="w-9 h-9 flex items-center justify-center rounded-lg bg-[var(--surface-quote)] border border-[var(--border-subtle)] text-base hover:border-[#0084ff] transition cursor-pointer shadow-sm active:scale-95"
@@ -527,46 +536,47 @@ export default function RoomPage() {
           </button>
           <button
             onClick={copyForWhatsApp}
-            className="h-9 px-3 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center justify-center cursor-pointer shadow-sm transition active:scale-95"
+            className="h-9 px-3.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center justify-center cursor-pointer shadow-sm transition active:scale-95"
           >
             <span>Invia</span>
           </button>
         </div>
       </header>
 
-      {/* Barra Presenze Online & Modalità */}
-      <div className="bg-[var(--surface-card)] border-b border-[var(--border-subtle)] px-3 py-1.5 flex items-center justify-between text-[11px]">
+      {/* Barra Presenze Online & Switch Libera/Voto PIÙ GRANDE */}
+      <div className="bg-[var(--surface-card)] border-b border-[var(--border-subtle)] px-3 py-2 flex items-center justify-between text-xs">
         <div className="flex items-center gap-2 truncate pr-2">
-          <span className="text-[var(--text-muted)] font-mono text-[10px]">{roomId}</span>
-          {isHost && <span className="bg-amber-500/20 text-amber-500 text-[9px] font-bold px-1 rounded">HOST</span>}
+          <span className="text-[var(--text-muted)] font-mono text-xs">{roomId}</span>
+          {isHost && <span className="bg-amber-500/20 text-amber-500 text-[10px] font-bold px-1.5 py-0.5 rounded">HOST</span>}
           {onlineUsers.length > 0 && (
-            <span className="text-emerald-500 font-mono text-[10px] flex items-center gap-1 border-l border-[var(--border-subtle)] pl-2">
+            <span className="text-emerald-500 font-mono text-xs flex items-center gap-1 border-l border-[var(--border-subtle)] pl-2">
               🟢 {onlineUsers.length} online
             </span>
           )}
         </div>
 
+        {/* Switch Libera / A Voto maggiorato */}
         {isHost ? (
-          <div className="flex items-center gap-0.5 bg-[var(--bg-main)] p-0.5 rounded border border-[var(--border-subtle)] shrink-0">
+          <div className="flex items-center gap-1 bg-[var(--bg-main)] p-1 rounded-md border border-[var(--border-subtle)] shrink-0">
             <button
               onClick={() => toggleBetMode("libera")}
-              className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
-                betMode === "libera" ? "bg-[#0084ff] text-white" : "text-[var(--text-muted)]"
+              className={`px-3 py-1 rounded text-xs font-bold transition cursor-pointer ${
+                betMode === "libera" ? "bg-[#0084ff] text-white shadow-sm" : "text-[var(--text-muted)] hover:text-white"
               }`}
             >
-              Libera
+              ⚡ Libera
             </button>
             <button
               onClick={() => toggleBetMode("voto")}
-              className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
-                betMode === "voto" ? "bg-[#0084ff] text-white" : "text-[var(--text-muted)]"
+              className={`px-3 py-1 rounded text-xs font-bold transition cursor-pointer ${
+                betMode === "voto" ? "bg-[#0084ff] text-white shadow-sm" : "text-[var(--text-muted)] hover:text-white"
               }`}
             >
-              A Voto
+              🗳️ A Voto
             </button>
           </div>
         ) : (
-          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+          <span className={`text-xs font-bold px-2 py-1 rounded ${
             betMode === "libera" ? "text-emerald-500 bg-emerald-500/10" : "text-amber-500 bg-amber-500/10"
           }`}>
             {betMode === "libera" ? "⚡ Libera" : "🗳️ A Voto"}
@@ -835,18 +845,18 @@ export default function RoomPage() {
           </div>
         )}
 
-        {/* Tab 3: Schedina Squad */}
+        {/* Tab 3: Schedina Squad (CON COMPARATORE INTEGRATO ACCANTO/SOTTO ALLA VINCITA) */}
         {activeTab === "schedina" && (
-          <div className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-3">
-            <div className="flex items-center justify-between pb-3 border-b border-[var(--border-subtle)] mb-3">
-              <span className="text-xs font-bold uppercase">Schedina ({confirmed.length})</span>
+          <div className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-3 sm:p-5 shadow-sm space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[var(--border-subtle)]">
+              <span className="text-xs font-bold uppercase tracking-wider">Schedina ({confirmed.length})</span>
               <div className="flex items-center gap-1 bg-[var(--bg-main)] p-1 rounded border border-[var(--border-subtle)]">
                 <span className="text-[10px] text-[var(--text-muted)]">Puntata:</span>
                 {[2, 5, 10, 20, 50].map((val) => (
                   <button
                     key={val}
                     onClick={() => setStake(val)}
-                    className={`px-1.5 py-0.5 rounded text-[11px] font-bold cursor-pointer ${
+                    className={`px-2 py-0.5 rounded text-xs font-bold cursor-pointer ${
                       stake === val ? "bg-[#0084ff] text-white" : "text-[var(--text-muted)]"
                     }`}
                   >
@@ -857,28 +867,30 @@ export default function RoomPage() {
             </div>
 
             {confirmed.length === 0 ? (
-              <div className="text-center py-8 text-xs text-[var(--text-muted)]">
+              <div className="text-center py-10 text-xs text-[var(--text-muted)]">
                 Nessuna giocata in schedina. Tocca le quote nel palinsesto per aggiungerle.
               </div>
             ) : (
-              <div className="divide-y divide-[var(--border-subtle)]">
-                {confirmed.map((c) => (
-                  <div key={c.id} className="py-2 flex items-center justify-between text-xs">
-                    <div className="pr-2 truncate">
-                      <div className="font-bold truncate">{c.match_label}</div>
-                      <div className="text-[11px] text-[#0084ff] font-semibold">{c.selection}</div>
+              <div className="space-y-4">
+                <div className="divide-y divide-[var(--border-subtle)]">
+                  {confirmed.map((c) => (
+                    <div key={c.id} className="py-2.5 flex items-center justify-between text-xs">
+                      <div className="pr-2 truncate">
+                        <div className="font-bold truncate">{c.match_label}</div>
+                        <div className="text-[11px] text-[#0084ff] font-semibold">{c.selection}</div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="font-mono font-bold text-[var(--quote-val)] text-sm">@{Number(c.odds).toFixed(2)}</span>
+                        <button onClick={() => removePick(c.id)} className="text-rose-500 px-1 text-sm cursor-pointer">✕</button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="font-mono font-bold text-[var(--quote-val)] text-sm">@{Number(c.odds).toFixed(2)}</span>
-                      <button onClick={() => removePick(c.id)} className="text-rose-500 px-1 text-sm cursor-pointer">✕</button>
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
 
-                <div className="pt-3 mt-2 border-t border-[var(--border-subtle)] space-y-1 text-xs">
+                <div className="pt-3 border-t border-[var(--border-subtle)] space-y-2 text-xs">
                   <div className="flex justify-between">
                     <span className="text-[var(--text-muted)]">Quota moltiplicatore:</span>
-                    <span className="font-mono font-bold">@{totalOdds}</span>
+                    <span className="font-mono font-bold text-sm">@{totalOdds}</span>
                   </div>
                   {bonusPct > 0 && (
                     <div className="flex justify-between text-amber-500">
@@ -886,11 +898,43 @@ export default function RoomPage() {
                       <span className="font-mono font-bold">+{((Number(potentialWin) - baseWin)).toFixed(2)} €</span>
                     </div>
                   )}
+
                   <div className="flex justify-between items-baseline pt-2 border-t border-[var(--border-subtle)]">
-                    <span className="font-bold uppercase text-xs">Potenziale Vincita ({stake}€):</span>
-                    <span className="text-xl font-mono font-black text-emerald-500">{potentialWin} €</span>
+                    <span className="font-bold uppercase text-xs">Potenziale Vincita Base ({stake}€):</span>
+                    <span className="text-2xl font-mono font-black text-emerald-500">{potentialWin} €</span>
                   </div>
 
+                  {/* COMPARATORE BOOKMAKER INTEGRATO NELLA SCHEDINA SQUAD */}
+                  <div className="mt-3 pt-3 border-t border-[var(--border-subtle)]">
+                    <span className="text-[11px] font-bold text-[var(--text-muted)] uppercase block mb-2">
+                      Confronto Payout Bookmaker ADM ({stake}€):
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {bookmakers.map((b) => (
+                        <div key={b.name} className="bg-[var(--surface-sub)] p-2.5 rounded-lg border border-[var(--border-subtle)] flex sm:flex-col justify-between items-center sm:items-start gap-1">
+                          <div>
+                            <span className="font-bold text-xs block">{b.name}</span>
+                            <span className="text-[10px] text-[var(--text-muted)]">Bonus incluso</span>
+                          </div>
+                          <div className="flex items-center sm:w-full sm:justify-between gap-2">
+                            <span className="text-sm font-mono font-bold text-emerald-500">
+                              {(Number(potentialWin) * b.bonus).toFixed(2)} €
+                            </span>
+                            <a
+                              href={b.link}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[10px] bg-[#0084ff] text-white px-2 py-0.5 rounded font-bold uppercase"
+                            >
+                              Apri ↗
+                            </a>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Divisione Spesa & Vincita a testa */}
                   <div className="mt-3 pt-3 border-t border-[var(--border-subtle)] bg-[var(--surface-sub)] p-3 rounded-lg">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-[11px] font-bold text-[var(--text-muted)] uppercase">Partecipanti alla spesa:</span>
@@ -923,14 +967,10 @@ export default function RoomPage() {
           </div>
         )}
 
-        {/* Tab 4: Comparatore */}
+        {/* Tab 4: Comparatore Standalone */}
         {activeTab === "comparatore" && (
           <div className="space-y-1.5">
-            {[
-              { name: "Sisal.it", bonus: 1.05, link: "https://www.sisal.it" },
-              { name: "Snai.it", bonus: 1.04, link: "https://www.snai.it" },
-              { name: "GoldBet", bonus: 1.03, link: "https://www.goldbet.it" },
-            ].map((b) => (
+            {bookmakers.map((b) => (
               <div key={b.name} className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-2.5 flex items-center justify-between">
                 <div>
                   <div className="text-xs font-bold">{b.name}</div>
@@ -955,11 +995,11 @@ export default function RoomPage() {
         )}
       </main>
 
-      {/* Tendina Flottante NovaJackpot */}
+      {/* TENDINA SCHEDINA IN BASSO A DESTRA PIÙ GRANDE (CON TASTO DIRETTO A SCHEDINA SQUAD) */}
       {activeTab !== "schedina" && (
         <div className="fixed bottom-3 right-3 sm:right-6 z-40 flex flex-col items-end pointer-events-none">
           <div
-            className={`w-[calc(100vw-24px)] max-w-[320px] sm:max-w-[350px] bg-[var(--surface-card)] border border-[var(--border-strong)] rounded-xl shadow-2xl p-3 mb-2 transition-all duration-300 pointer-events-auto max-h-[65vh] overflow-y-auto ${
+            className={`w-[calc(100vw-24px)] max-w-[340px] sm:max-w-[380px] bg-[var(--surface-card)] border border-[var(--border-strong)] rounded-xl shadow-2xl p-3.5 mb-2 transition-all duration-300 pointer-events-auto max-h-[65vh] overflow-y-auto ${
               isSheetOpen
                 ? "opacity-100 translate-y-0 scale-100"
                 : "opacity-0 translate-y-4 scale-95 pointer-events-none"
@@ -969,7 +1009,7 @@ export default function RoomPage() {
               <span className="text-xs font-bold uppercase tracking-wider">Schedina Rapida ({confirmed.length})</span>
               <button
                 onClick={() => setIsSheetOpen(false)}
-                className="text-xs font-bold text-[var(--text-muted)] hover:text-white px-1.5 py-0.5 rounded bg-[var(--surface-quote)] cursor-pointer"
+                className="text-xs font-bold text-[var(--text-muted)] hover:text-white px-2 py-0.5 rounded bg-[var(--surface-quote)] cursor-pointer"
               >
                 ✕
               </button>
@@ -982,7 +1022,7 @@ export default function RoomPage() {
             ) : (
               <div className="divide-y divide-[var(--border-subtle)] py-1.5">
                 {confirmed.map((c) => (
-                  <div key={c.id} className="py-1.5 flex items-center justify-between text-xs">
+                  <div key={c.id} className="py-2 flex items-center justify-between text-xs">
                     <div className="pr-2 truncate">
                       <div className="font-bold truncate">{c.match_label}</div>
                       <div className="text-[10px] text-[#0084ff] font-semibold">{c.selection}</div>
@@ -994,28 +1034,27 @@ export default function RoomPage() {
                   </div>
                 ))}
 
-                <div className="pt-2 mt-1 space-y-1 text-xs">
-                  <div className="flex justify-between text-[11px]">
+                <div className="pt-2 mt-1 space-y-1.5 text-xs">
+                  <div className="flex justify-between text-xs">
                     <span className="text-[var(--text-muted)]">Quota: @{totalOdds}</span>
                     <span className="text-[var(--text-muted)]">Puntata: {stake}€</span>
                   </div>
-                  <div className="flex justify-between items-baseline pt-1 text-emerald-500 font-mono font-black text-sm">
-                    <span className="text-xs uppercase font-bold text-[var(--text-muted)]">Vincita:</span>
+                  <div className="flex justify-between items-baseline pt-1 text-emerald-500 font-mono font-black text-base">
+                    <span className="text-xs uppercase font-bold text-[var(--text-muted)]">Vincita Totale:</span>
                     <span>{potentialWin} €</span>
                   </div>
 
-                  <div className="flex gap-1.5 pt-2">
+                  {/* PULSANTE UNICO DIRETTO: VAI A SCHEDINA SQUAD (Al posto di Storia e Invia) */}
+                  <div className="pt-2">
                     <button
-                      onClick={exportStoryCard}
-                      className="flex-1 bg-[var(--surface-quote)] border border-[var(--border-subtle)] hover:border-[#0084ff] py-1.5 rounded text-[11px] font-bold text-center cursor-pointer"
+                      onClick={() => {
+                        setIsSheetOpen(false);
+                        setActiveTab("schedina");
+                      }}
+                      className="w-full h-10 bg-[#0084ff] hover:bg-[#0073e6] active:bg-[#0060c0] text-white text-xs font-bold uppercase tracking-wider rounded-lg flex items-center justify-center gap-1 cursor-pointer shadow-md transition"
                     >
-                      📸 Storia
-                    </button>
-                    <button
-                      onClick={copyForWhatsApp}
-                      className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-1.5 rounded text-[11px] font-bold text-center cursor-pointer"
-                    >
-                      Invia
+                      <span>Vai a Schedina Squad</span>
+                      <span>➔</span>
                     </button>
                   </div>
                 </div>
@@ -1023,15 +1062,16 @@ export default function RoomPage() {
             )}
           </div>
 
+          {/* PULSANTE NOVAJACKPOT INGRANDITO */}
           <button
             onClick={() => setIsSheetOpen(!isSheetOpen)}
-            className="pointer-events-auto h-11 px-4 rounded-full bg-[#0084ff] hover:bg-[#0073e6] active:bg-[#0060c0] text-white font-black text-xs uppercase tracking-wider shadow-2xl flex items-center gap-2 cursor-pointer border border-white/20 transition-transform active:scale-95"
+            className="pointer-events-auto h-12 px-5 rounded-full bg-[#0084ff] hover:bg-[#0073e6] active:bg-[#0060c0] text-white font-black text-xs uppercase tracking-wider shadow-2xl flex items-center gap-2.5 cursor-pointer border border-white/20 transition-transform active:scale-95"
           >
             <span>SCHEDINA</span>
-            <span className="px-1.5 py-0.5 rounded-full bg-white/25 text-[10px] font-mono">
+            <span className="px-2 py-0.5 rounded-full bg-white/25 text-xs font-mono">
               {confirmed.length}
             </span>
-            <span className="text-[10px]">{isSheetOpen ? "▼" : "▲"}</span>
+            <span className="text-xs">{isSheetOpen ? "▼" : "▲"}</span>
           </button>
         </div>
       )}

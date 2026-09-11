@@ -220,56 +220,66 @@ export default function RoomPage() {
     return groups;
   }, [filteredMatches]);
 
-  const isSelected = (matchId: string, market: string, sel: string) => {
-    return picks.some((p) => p.match_id === matchId && p.market === market && p.selection === sel && p.status !== "rejected");
+  // CONTROLLO PRECISO: verifica sia il match_id sia la selezione esatta
+  const isSelected = (matchId: string, sel: string) => {
+    return picks.some((p) => p.match_id === matchId && p.selection === sel && p.status !== "rejected");
   };
 
+  // LOGICA CORRETTA:
+  // 1. Se clicchi la stessa identica quota -> la deseleziona e toglie.
+  // 2. Se cambi quota NELLO STESSO MERCATO (es. da 1 a X) -> aggiorna la giocata senza duplicare.
+  // 3. Se scegli un mercato DIVERSO dello stesso match (es. 1X2 + Under/Over) -> le tiene ENTRAMBE!
   const handlePickAction = async (match: any, market: string, selection: string, odds: number) => {
-    const existingSame = picks.find((p) => p.match_id === match.id && p.market === market && p.selection === selection);
-    
-    if (existingSame) {
+    const isDirect = betMode === "libera";
+    const initialStatus = isDirect ? "confirmed" : "pending";
+
+    // 1. Quota identica già attiva -> Deseleziona
+    const existingSameSelection = picks.find(
+      (p) => p.match_id === match.id && p.selection === selection && p.status !== "rejected"
+    );
+
+    if (existingSameSelection) {
       if (betMode === "libera") {
-        removePick(existingSame.id);
+        removePick(existingSameSelection.id);
         return;
       } else {
-        showToast("⚠️ Quota già proposta in votazione.");
+        showToast("⚠️ Pronostico già inserito.");
         return;
       }
     }
 
-    const isDirect = betMode === "libera";
-    const initialStatus = isDirect ? "confirmed" : "pending";
+    // 2. Esiste già un pronostico sullo STESSO mercato per questo match -> Sostituisce solo quella quota
+    const existingMarketPick = picks.find(
+      (p) => p.match_id === match.id && p.market === market && p.status !== "rejected"
+    );
 
-    const existingMatchPick = picks.find((p) => p.match_id === match.id && p.status !== "rejected");
-
-    if (existingMatchPick) {
+    if (existingMarketPick) {
       const updatedPick = {
-        ...existingMatchPick,
-        market,
+        ...existingMarketPick,
         selection,
         odds,
         proposed_by: nick,
         status: initialStatus
       };
 
-      setPicks((prev) => prev.map((p) => (p.id === existingMatchPick.id ? updatedPick : p)));
-      showToast(`🔄 Sostituito: ${selection} (${market})`);
+      setPicks((prev) => prev.map((p) => (p.id === existingMarketPick.id ? updatedPick : p)));
+      showToast(`🔄 Aggiornato ${market}: ${selection}`);
 
       try {
         await supabase
           .from("room_picks")
           .update({
-            market,
             selection,
             odds,
             proposed_by: nick,
             status: initialStatus
           })
-          .eq("id", existingMatchPick.id);
+          .eq("id", existingMarketPick.id);
       } catch {}
       return;
     }
 
+    // 3. Nuovo pronostico (mercato diverso o match diverso) -> Aggiunge senza cancellare nulla
     const tempId = `pick_${Date.now()}`;
     const newPick = {
       id: tempId,
@@ -286,7 +296,7 @@ export default function RoomPage() {
     };
 
     setPicks((prev) => [...prev, newPick]);
-    showToast(isDirect ? `✅ Inserito: ${selection}` : `🗳️ Proposta: ${selection}`);
+    showToast(isDirect ? `✅ Aggiunto: ${selection}` : `🗳️ Proposta: ${selection}`);
 
     const { data, error } = await supabase.from("room_picks").insert({
       room_id: roomId,
@@ -528,7 +538,6 @@ export default function RoomPage() {
     <div className="min-h-screen bg-[var(--bg-main)] text-[var(--text-main)] pb-24 font-sans antialiased select-none">
       <canvas ref={canvasRef} className="hidden" />
 
-      {/* Toast Notifica */}
       {toast && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-[#0084ff] text-white text-[11px] font-bold px-4 py-2 rounded-full shadow-2xl border border-white/20">
           {toast}
@@ -561,8 +570,8 @@ export default function RoomPage() {
                 <p>La puntata minima ammessa è di <strong>1,00 €</strong>. Il massimale di vincita per singolo biglietto (singola o multipla) è fissato a <strong>€ 50.000,00</strong> a norma di legge ADM.</p>
               </div>
               <div>
-                <h4 className="font-bold text-white uppercase text-[11px]">2. Sostituzione Automatica Esiti</h4>
-                <p>Selezionando una nuova quota per lo stesso incontro, il sistema effettua la <strong>sostituzione automatica</strong> della selezione precedente, consentendo di personalizzare liberamente il pronostico.</p>
+                <h4 className="font-bold text-white uppercase text-[11px]">2. Selezione Mercati Multipli</h4>
+                <p>È possibile combinare liberamente mercati differenti. Se si seleziona una nuova quota all'interno dello stesso mercato per il medesimo match, il sistema aggiorna direttamente la scelta.</p>
               </div>
               <div>
                 <h4 className="font-bold text-white uppercase text-[11px]">3. Bonus Multipla Progressivo</h4>
@@ -771,7 +780,7 @@ export default function RoomPage() {
               </div>
             </aside>
 
-            {/* Tabella Palinsesto */}
+            {/* Tabella Palinsesto Quote */}
             <div className="flex-1 min-w-0 w-full space-y-3">
               <div className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shadow-sm">
                 <div className="flex items-center gap-2">
@@ -838,17 +847,19 @@ export default function RoomPage() {
                                 <div className="text-xs font-bold truncate">{m.away}</div>
                               </div>
 
+                              {/* TASTI QUOTE UNIFICATI E CON GRIGLIA AD ALTA REATTIVITÀ TOUCH */}
                               <div className="shrink-0">
                                 {marketFilter === "1X2" && (
                                   <div className="grid grid-cols-3 gap-1.5 w-[190px] sm:w-[220px]">
                                     {(["1", "X", "2"] as const).map((lbl) => {
                                       const val = Number(m.odds1X2?.[lbl] || 2.0);
-                                      const selected = isSelected(m.id, "1X2", lbl);
+                                      const selected = isSelected(m.id, lbl);
                                       return (
                                         <button
                                           key={lbl}
+                                          type="button"
                                           onClick={() => handlePickAction(m, "1X2", lbl, val)}
-                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer ${
+                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer active:scale-95 ${
                                             selected
                                               ? "bg-[#0084ff] border-white text-white shadow-sm font-black"
                                               : "bg-[var(--surface-quote)] active:bg-[var(--surface-quote-hover)] border-[var(--border-subtle)] text-[var(--quote-val)]"
@@ -866,12 +877,13 @@ export default function RoomPage() {
                                   <div className="grid grid-cols-3 gap-1.5 w-[190px] sm:w-[220px]">
                                     {(["1X", "12", "X2"] as const).map((lbl) => {
                                       const val = Number(m.oddsDC?.[lbl] || 1.35);
-                                      const selected = isSelected(m.id, "Doppia Chance", lbl);
+                                      const selected = isSelected(m.id, lbl);
                                       return (
                                         <button
                                           key={lbl}
+                                          type="button"
                                           onClick={() => handlePickAction(m, "Doppia Chance", lbl, val)}
-                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer ${
+                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer active:scale-95 ${
                                             selected
                                               ? "bg-[#0084ff] border-white text-white shadow-sm font-black"
                                               : "bg-[var(--surface-quote)] active:bg-[var(--surface-quote-hover)] border-[var(--border-subtle)] text-[var(--quote-val)]"
@@ -886,15 +898,16 @@ export default function RoomPage() {
                                 )}
 
                                 {marketFilter === "UO" && (
-                                  <div className="grid grid-cols-2 gap-1.5 w-[170px] sm:w-[200px]">
+                                  <div className="grid grid-cols-2 gap-1.5 w-[190px] sm:w-[220px]">
                                     {(["Over 2.5", "Under 2.5"] as const).map((lbl) => {
                                       const val = Number(m.oddsUO?.[lbl] || 1.85);
-                                      const selected = isSelected(m.id, "Under/Over", lbl);
+                                      const selected = isSelected(m.id, lbl);
                                       return (
                                         <button
                                           key={lbl}
+                                          type="button"
                                           onClick={() => handlePickAction(m, "Under/Over", lbl, val)}
-                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer ${
+                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer active:scale-95 ${
                                             selected
                                               ? "bg-[#0084ff] border-white text-white shadow-sm font-black"
                                               : "bg-[var(--surface-quote)] active:bg-[var(--surface-quote-hover)] border-[var(--border-subtle)] text-[var(--quote-val)]"
@@ -909,15 +922,16 @@ export default function RoomPage() {
                                 )}
 
                                 {marketFilter === "GG" && (
-                                  <div className="grid grid-cols-2 gap-1.5 w-[170px] sm:w-[200px]">
+                                  <div className="grid grid-cols-2 gap-1.5 w-[190px] sm:w-[220px]">
                                     {(["Goal", "NoGoal"] as const).map((lbl) => {
                                       const val = Number(m.oddsGG?.[lbl] || 1.8);
-                                      const selected = isSelected(m.id, "Goal/NoGoal", lbl);
+                                      const selected = isSelected(m.id, lbl);
                                       return (
                                         <button
                                           key={lbl}
+                                          type="button"
                                           onClick={() => handlePickAction(m, "Goal/NoGoal", lbl, val)}
-                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer ${
+                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer active:scale-95 ${
                                             selected
                                               ? "bg-[#0084ff] border-white text-white shadow-sm font-black"
                                               : "bg-[var(--surface-quote)] active:bg-[var(--surface-quote-hover)] border-[var(--border-subtle)] text-[var(--quote-val)]"
@@ -935,12 +949,13 @@ export default function RoomPage() {
                                   <div className="grid grid-cols-3 gap-1.5 w-[190px] sm:w-[220px]">
                                     {(["1-3 Goal", "2-4 Goal", "2-5 Goal"] as const).map((lbl) => {
                                       const val = Number(m.oddsMG?.[lbl] || 1.45);
-                                      const selected = isSelected(m.id, "Multigoal", lbl);
+                                      const selected = isSelected(m.id, lbl);
                                       return (
                                         <button
                                           key={lbl}
+                                          type="button"
                                           onClick={() => handlePickAction(m, "Multigoal", lbl, val)}
-                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer ${
+                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer active:scale-95 ${
                                             selected
                                               ? "bg-[#0084ff] border-white text-white shadow-sm font-black"
                                               : "bg-[var(--surface-quote)] active:bg-[var(--surface-quote-hover)] border-[var(--border-subtle)] text-[var(--quote-val)]"
@@ -1037,7 +1052,7 @@ export default function RoomPage() {
           </div>
         )}
 
-        {/* Tab 3: Schedina Squad con Avviso Ufficiale € 50.000 */}
+        {/* Tab 3: Schedina Squad con Regolamento Completo */}
         {activeTab === "schedina" && (
           <div className="max-w-4xl mx-auto bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-3 sm:p-5 shadow-sm space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-[var(--border-subtle)]">
@@ -1106,7 +1121,7 @@ export default function RoomPage() {
                     <span className="text-2xl font-mono font-black text-emerald-500">{potentialWin} €</span>
                   </div>
 
-                  {/* MESSAGGIO UFFICIALE SE SUPERATO IL LIMITE DI € 50.000 */}
+                  {/* Avviso Superamento 50.000 € */}
                   {isCapped && (
                     <div className="bg-amber-500/15 border border-amber-500/30 text-amber-400 p-2.5 rounded-lg text-xs leading-relaxed font-semibold flex items-center gap-2">
                       <span className="text-base">⚠️</span>
@@ -1114,7 +1129,7 @@ export default function RoomPage() {
                     </div>
                   )}
 
-                  {/* COMPARATORE BOOKMAKER INTERAMENTE CLICCABILE (CAPPATO A 50.000€) */}
+                  {/* Comparatore Bookmaker */}
                   <div className="mt-3 pt-3 border-t border-[var(--border-subtle)]">
                     <span className="text-[11px] font-bold text-[var(--text-muted)] uppercase block mb-2">
                       Confronto Payout Bookmaker ADM ({stake}€):
@@ -1145,7 +1160,7 @@ export default function RoomPage() {
                     </div>
                   </div>
 
-                  {/* TENDINA PARTECIPANTI COMPLETA DA 1 A 20 PERSONE */}
+                  {/* Divisione Spesa a Testa da 1 a 20 */}
                   <div className="mt-3 pt-3 border-t border-[var(--border-subtle)] bg-[var(--surface-sub)] p-3 rounded-lg">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-[11px] font-bold text-[var(--text-muted)] uppercase">Partecipanti alla spesa:</span>
@@ -1206,7 +1221,7 @@ export default function RoomPage() {
             ) : (
               <div className="divide-y divide-[var(--border-subtle)] py-1.5">
                 {confirmed.map((c) => (
-                  <div key={c.id} className="py-1.5 flex items-center justify-between text-xs">
+                  <div key={c.id} className="py-2 flex items-center justify-between text-xs">
                     <div className="pr-2 truncate">
                       <div className="font-bold truncate">{c.match_label}</div>
                       <div className="text-[10px] text-[#0084ff] font-semibold">{c.selection}</div>
@@ -1224,11 +1239,10 @@ export default function RoomPage() {
                     <span className="text-[var(--text-muted)]">Puntata: {stake}€</span>
                   </div>
                   <div className="flex justify-between items-baseline pt-1 text-emerald-500 font-mono font-black text-base">
-                    <span className="text-xs uppercase font-bold text-[var(--text-muted)]">Vincita Totale:</span>
+                    <span className="text-xs uppercase font-bold text-[var(--text-muted)]">Vincita:</span>
                     <span>{potentialWin} €</span>
                   </div>
 
-                  {/* Avviso 50k visibile anche nel Drawer Rapido */}
                   {isCapped && (
                     <div className="bg-amber-500/15 border border-amber-500/30 text-amber-400 p-1.5 rounded text-[10px] leading-tight font-semibold">
                       ⚠️ Vincita superiore a € 50.000. Modifica puntata o pronostico.

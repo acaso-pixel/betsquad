@@ -10,6 +10,8 @@ export default function RoomPage() {
   const roomId = typeof rawId === "string" ? rawId : Array.isArray(rawId) ? rawId[0] : "BS-SESSION";
 
   const [roomData, setRoomData] = useState<any>(null);
+  const [roomName, setRoomName] = useState<string>("");
+  const [tempRoomName, setTempRoomName] = useState<string>("");
   const [betMode, setBetMode] = useState<"libera" | "voto">("libera");
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [matches, setMatches] = useState<any[]>([]);
@@ -20,11 +22,13 @@ export default function RoomPage() {
   const [stake, setStake] = useState<number>(10);
   const [participantsCount, setParticipantsCount] = useState<number>(4);
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
-  const [nick, setNick] = useState("Giocatore");
+  const [nick, setNick] = useState<string>("Giocatore");
+  const [tempNick, setTempNick] = useState<string>("Giocatore");
   const [toast, setToast] = useState<string | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const channelRef = useRef<any>(null);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -58,8 +62,13 @@ export default function RoomPage() {
   }, [roomData, nick]);
 
   useEffect(() => {
-    const savedNick = localStorage.getItem("bs_nick") || `Player_${Math.random().toString(36).substring(2, 6)}`;
+    let savedNick = localStorage.getItem("bs_nick");
+    if (!savedNick) {
+      savedNick = `Player_${Math.floor(1000 + Math.random() * 9000)}`;
+      localStorage.setItem("bs_nick", savedNick);
+    }
     setNick(savedNick);
+    setTempNick(savedNick);
 
     supabase
       .from("rooms")
@@ -69,10 +78,17 @@ export default function RoomPage() {
       .then(({ data }) => {
         if (data) {
           setRoomData(data);
+          const nameVal = data.name || `Schedina #${roomId}`;
+          setRoomName(nameVal);
+          setTempRoomName(nameVal);
           if (data.bet_mode) {
             const mapped = data.bet_mode === "congiunta" ? "voto" : data.bet_mode === "disgiunta" ? "libera" : data.bet_mode;
             setBetMode(mapped);
           }
+        } else {
+          const fallback = `Schedina #${roomId}`;
+          setRoomName(fallback);
+          setTempRoomName(fallback);
         }
       });
 
@@ -93,6 +109,7 @@ export default function RoomPage() {
     const channel = supabase.channel(`room_${roomId}`, {
       config: { presence: { key: savedNick } }
     });
+    channelRef.current = channel;
 
     channel
       .on("presence", { event: "sync" }, () => {
@@ -113,10 +130,16 @@ export default function RoomPage() {
         }
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "rooms", filter: `id=eq.${roomId}` }, (payload) => {
-        if (payload.new && payload.new.bet_mode) {
-          const mapped = payload.new.bet_mode === "congiunta" ? "voto" : payload.new.bet_mode === "disgiunta" ? "libera" : payload.new.bet_mode;
-          setBetMode(mapped);
-          showToast(`⚙️ Regole: ${mapped === "libera" ? "MODIFICA LIBERA" : "MODALITÀ A VOTO"}`);
+        if (payload.new) {
+          if (payload.new.name) {
+            setRoomName(payload.new.name);
+            setTempRoomName(payload.new.name);
+          }
+          if (payload.new.bet_mode) {
+            const mapped = payload.new.bet_mode === "congiunta" ? "voto" : payload.new.bet_mode === "disgiunta" ? "libera" : payload.new.bet_mode;
+            setBetMode(mapped);
+            showToast(`⚙️ Regole: ${mapped === "libera" ? "MODIFICA LIBERA" : "MODALITÀ A VOTO"}`);
+          }
         }
       })
       .subscribe(async (status) => {
@@ -130,13 +153,37 @@ export default function RoomPage() {
     };
   }, [roomId]);
 
+  const commitNick = async () => {
+    const val = tempNick.trim() || `Player_${Math.floor(1000 + Math.random() * 9000)}`;
+    setNick(val);
+    setTempNick(val);
+    localStorage.setItem("bs_nick", val);
+    showToast(`👤 Nickname: ${val}`);
+
+    if (channelRef.current) {
+      try {
+        await channelRef.current.track({ online_at: new Date().toISOString(), nick: val });
+      } catch {}
+    }
+  };
+
+  const commitRoomName = async () => {
+    const val = tempRoomName.trim() || `Schedina #${roomId}`;
+    setRoomName(val);
+    setTempRoomName(val);
+    showToast(`📝 Nome sessione salvato`);
+    try {
+      await supabase.from("rooms").update({ name: val }).eq("id", roomId);
+    } catch {}
+  };
+
   const toggleBetMode = async (newMode: "libera" | "voto") => {
     if (!isHost) {
       showToast("⛔ Solo l'Host può cambiare la modalità!");
       return;
     }
     setBetMode(newMode);
-    showToast(`Modalità impostata su: ${newMode === "libera" ? "Libera" : "A Voto"}`);
+    showToast(`Modalità: ${newMode === "libera" ? "Libera" : "A Voto"}`);
 
     try {
       await supabase.from("rooms").update({ bet_mode: newMode }).eq("id", roomId);
@@ -280,6 +327,7 @@ export default function RoomPage() {
 
   const copyForWhatsApp = () => {
     const text = `🔥 BetSquad [${roomId}]\n` +
+      `📌 Sessione: ${roomName}\n` +
       `⚙️ Regole: ${betMode === "libera" ? "Libera" : "A Voto"}\n` +
       `👥 Partecipanti: ${safeParticipants} (${stakePerHead}€ a testa)\n` +
       `📌 Pronostici (${confirmed.length}):\n` +
@@ -326,27 +374,37 @@ export default function RoomPage() {
     ctx.fillRect(0, 0, 1080, 1920);
 
     ctx.save();
+    ctx.font = "900 64px sans-serif";
+    const betTextW = ctx.measureText("BET").width;
+    const squadTextW = ctx.measureText("SQUAD").width;
+
+    const betPadX = 24;
+    const badgeW = betTextW + betPadX * 2;
+    const badgeH = 88;
+    const gap = 20;
+    const totalLogoW = badgeW + gap + squadTextW;
+
+    const startX = (1080 - totalLogoW) / 2;
+    const logoY = 120;
+
+    ctx.fillStyle = "#0084ff";
+    drawRoundedRect(ctx, startX, logoY, badgeW, badgeH, 18);
+
+    ctx.fillStyle = "#ffffff";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
+    ctx.fillText("BET", startX + badgeW / 2, logoY + badgeH / 2 + 2);
 
-    const pillW = 440;
-    const pillH = 100;
-    const pillX = (1080 - pillW) / 2;
-    const pillY = 110;
-    ctx.fillStyle = "#0084ff";
-    drawRoundedRect(ctx, pillX, pillY, pillW, pillH, 24);
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "900 56px sans-serif";
-    ctx.fillText("BETSQUAD", 1080 / 2, pillY + pillH / 2);
-
+    ctx.textAlign = "left";
+    ctx.fillText("SQUAD", startX + badgeW + gap, logoY + badgeH / 2 + 2);
     ctx.restore();
 
+    ctx.save();
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 58px sans-serif";
+    ctx.font = "bold 52px sans-serif";
     ctx.textAlign = "center";
     ctx.fillText("SCHEDINA DEL GIORNO", 1080 / 2, 280);
-    ctx.textAlign = "left";
+    ctx.restore();
 
     ctx.fillStyle = "rgba(22, 36, 54, 0.85)";
     drawRoundedRect(ctx, 80, 330, 920, 1020, 28);
@@ -358,18 +416,21 @@ export default function RoomPage() {
       ctx.fillText("Nessun pronostico inserito", 140, yPos);
     } else {
       confirmed.slice(0, 8).forEach((c, idx) => {
+        ctx.textAlign = "left";
+        ctx.textBaseline = "alphabetic";
         ctx.fillStyle = "#ffffff";
         ctx.font = "bold 34px sans-serif";
-        const label = c.match_label.length > 28 ? c.match_label.substring(0, 26) + "..." : c.match_label;
+        const label = c.match_label.length > 25 ? c.match_label.substring(0, 23) + "..." : c.match_label;
         ctx.fillText(`${idx + 1}. ${label}`, 120, yPos);
 
         ctx.fillStyle = "#0084ff";
         ctx.font = "bold 32px sans-serif";
         ctx.fillText(`Pronostico: ${c.selection}`, 120, yPos + 44);
 
+        ctx.textAlign = "right";
         ctx.fillStyle = "#f59e0b";
         ctx.font = "900 38px monospace";
-        ctx.fillText(`@${Number(c.odds).toFixed(2)}`, 850, yPos + 25);
+        ctx.fillText(`@${Number(c.odds).toFixed(2)}`, 950, yPos + 25);
 
         ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
         ctx.lineWidth = 2;
@@ -385,6 +446,7 @@ export default function RoomPage() {
     ctx.fillStyle = "#162436";
     drawRoundedRect(ctx, 80, 1400, 920, 420, 28);
 
+    ctx.textAlign = "left";
     ctx.fillStyle = "#94a3b8";
     ctx.font = "bold 32px sans-serif";
     ctx.fillText("QUOTA TOTALE", 140, 1480);
@@ -421,32 +483,53 @@ export default function RoomPage() {
       )}
 
       {/* Header */}
-      <header className="bg-[var(--surface-header)] border-b border-[var(--border-subtle)] sticky top-0 z-30 px-3 py-2 flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          <span className="bg-[#0084ff] text-white font-black text-[10px] px-1.5 py-0.5 rounded">BET</span>
-          <span className="font-extrabold text-xs tracking-tight">SQUAD</span>
-          <span className="text-[10px] font-mono text-[var(--text-muted)] ml-1 border-l border-[var(--border-subtle)] pl-1.5">{roomId}</span>
+      <header className="bg-[var(--surface-header)] border-b border-[var(--border-subtle)] sticky top-0 z-30 px-3 py-2 flex items-center justify-between gap-2 shadow-sm">
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="bg-[#0084ff] text-white font-black text-[11px] px-2 py-0.5 rounded">BET</span>
+          <span className="font-extrabold text-sm tracking-tight hidden sm:inline">SQUAD</span>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex-1 max-w-sm mx-1 flex items-center justify-center gap-1.5">
+          <input
+            type="text"
+            value={tempRoomName}
+            onChange={(e) => setTempRoomName(e.target.value)}
+            onBlur={commitRoomName}
+            onKeyDown={(e) => e.key === "Enter" && commitRoomName()}
+            title="Clicca per modificare il nome della stanza"
+            className="w-1/2 h-8 px-2 bg-[var(--surface-card)] hover:bg-[var(--surface-sub)] border border-[var(--border-subtle)] focus:border-[#0084ff] rounded text-xs font-bold text-center text-[var(--text-main)] truncate focus:outline-none transition cursor-text"
+          />
+          <input
+            type="text"
+            value={tempNick}
+            onChange={(e) => setTempNick(e.target.value)}
+            onBlur={commitNick}
+            onKeyDown={(e) => e.key === "Enter" && commitNick()}
+            title="Clicca per cambiare il tuo nickname"
+            className="w-1/2 h-8 px-2 bg-[var(--surface-card)] hover:bg-[var(--surface-sub)] border border-[var(--border-subtle)] focus:border-[#0084ff] rounded text-xs font-semibold text-center text-[#0084ff] truncate focus:outline-none transition cursor-text"
+          />
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             onClick={exportStoryCard}
-            className="p-1.5 rounded bg-[var(--surface-quote)] border border-[var(--border-subtle)] text-xs font-bold hover:border-[#0084ff] transition cursor-pointer"
-            title="Scarica Card per Instagram Stories"
+            className="w-9 h-9 flex items-center justify-center rounded-lg bg-[var(--surface-quote)] border border-[var(--border-subtle)] text-base hover:border-[#0084ff] transition cursor-pointer shadow-sm active:scale-95"
+            title="Scarica Card Instagram"
           >
             📸
           </button>
           <button
             onClick={toggleTheme}
-            className="w-7 h-7 flex items-center justify-center rounded bg-[var(--surface-quote)] border border-[var(--border-subtle)] text-xs cursor-pointer"
+            className="w-9 h-9 flex items-center justify-center rounded-lg bg-[var(--surface-quote)] border border-[var(--border-subtle)] text-base hover:border-[#0084ff] transition cursor-pointer shadow-sm active:scale-95"
+            title="Cambia tema chiaro/scuro"
           >
             {theme === "dark" ? "☀️" : "🌙"}
           </button>
           <button
             onClick={copyForWhatsApp}
-            className="bg-emerald-600 active:bg-emerald-700 text-white text-[11px] font-bold px-2 py-1 rounded flex items-center gap-1 cursor-pointer"
+            className="h-9 px-3 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center justify-center cursor-pointer shadow-sm transition active:scale-95"
           >
-            Invia
+            <span>Invia</span>
           </button>
         </div>
       </header>
@@ -454,7 +537,7 @@ export default function RoomPage() {
       {/* Barra Presenze Online & Modalità */}
       <div className="bg-[var(--surface-card)] border-b border-[var(--border-subtle)] px-3 py-1.5 flex items-center justify-between text-[11px]">
         <div className="flex items-center gap-2 truncate pr-2">
-          <span className="text-[var(--text-muted)] truncate">👤 {nick}</span>
+          <span className="text-[var(--text-muted)] font-mono text-[10px]">{roomId}</span>
           {isHost && <span className="bg-amber-500/20 text-amber-500 text-[9px] font-bold px-1 rounded">HOST</span>}
           {onlineUsers.length > 0 && (
             <span className="text-emerald-500 font-mono text-[10px] flex items-center gap-1 border-l border-[var(--border-subtle)] pl-2">
@@ -491,7 +574,7 @@ export default function RoomPage() {
         )}
       </div>
 
-      {/* Tabs Reordinate */}
+      {/* Tabs */}
       <div className="bg-[var(--surface-header)] border-b border-[var(--border-subtle)] px-2 flex text-xs font-bold uppercase tracking-wider overflow-x-auto no-scrollbar">
         <button
           onClick={() => setActiveTab("palinsesto")}
@@ -752,7 +835,7 @@ export default function RoomPage() {
           </div>
         )}
 
-        {/* Tab 3: Schedina Squad (Schermata Piena) */}
+        {/* Tab 3: Schedina Squad */}
         {activeTab === "schedina" && (
           <div className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-3">
             <div className="flex items-center justify-between pb-3 border-b border-[var(--border-subtle)] mb-3">
@@ -872,7 +955,7 @@ export default function RoomPage() {
         )}
       </main>
 
-      {/* TENDINA FLOTTANTE IN BASSO A DESTRA (Stile NovaJackpot: w-72/w-80, NO BACKDROP) */}
+      {/* Tendina Flottante NovaJackpot */}
       {activeTab !== "schedina" && (
         <div className="fixed bottom-3 right-3 sm:right-6 z-40 flex flex-col items-end pointer-events-none">
           <div

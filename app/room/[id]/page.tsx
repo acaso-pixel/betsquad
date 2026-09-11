@@ -3,6 +3,12 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { 
+  Scale, Camera, Sun, Moon, Share2, Search, Pin, PinOff, 
+  ThumbsUp, ThumbsDown, CheckCircle2, XCircle, Trophy, 
+  ExternalLink, Users, QrCode, ArrowRight, Trash2, ShieldAlert,
+  Flame, Sparkles, RefreshCw, AlertCircle
+} from "lucide-react";
 
 export default function RoomPage() {
   const params = useParams();
@@ -17,7 +23,7 @@ export default function RoomPage() {
   const [matches, setMatches] = useState<any[]>([]);
   const [picks, setPicks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"palinsesto" | "voti" | "schedina">("palinsesto");
+  const [activeTab, setActiveTab] = useState<"palinsesto" | "voti" | "schedina" | "storico">("palinsesto");
   const [selectedLeague, setSelectedLeague] = useState<string>("Serie A TIM");
   const [marketFilter, setMarketFilter] = useState<"1X2" | "DC" | "UO" | "GG" | "MG">("1X2");
   const [stake, setStake] = useState<number>(10);
@@ -28,15 +34,25 @@ export default function RoomPage() {
   const [toast, setToast] = useState<string | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [showRulesModal, setShowRulesModal] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
 
-  // STATO PER MODALE DETTAGLIO PARTITA (+ TUTTE LE 15 OPZIONI)
+  const [searchLeagueQuery, setSearchLeagueQuery] = useState("");
+  const [pinnedLeagues, setPinnedLeagues] = useState<string[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        return JSON.parse(localStorage.getItem("bs_pinned_leagues") || '["Serie A TIM", "Premier League"]');
+      } catch { return ["Serie A TIM", "Premier League"]; }
+    }
+    return ["Serie A TIM", "Premier League"];
+  });
+
   const [detailMatch, setDetailMatch] = useState<any | null>(null);
   const [detailCategory, setDetailCategory] = useState<string>("PRINCIPALI");
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const channelRef = useRef<any>(null);
-
   const picksRef = useRef<any[]>([]);
+
   useEffect(() => {
     picksRef.current = picks;
   }, [picks]);
@@ -65,6 +81,18 @@ export default function RoomPage() {
     } else {
       document.documentElement.classList.remove("light");
     }
+  };
+
+  const togglePinLeague = (leagueName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    let updated;
+    if (pinnedLeagues.includes(leagueName)) {
+      updated = pinnedLeagues.filter(l => l !== leagueName);
+    } else {
+      updated = [...pinnedLeagues, leagueName];
+    }
+    setPinnedLeagues(updated);
+    localStorage.setItem("bs_pinned_leagues", JSON.stringify(updated));
   };
 
   const isHost = useMemo(() => {
@@ -164,6 +192,7 @@ export default function RoomPage() {
             const exists = prev.some((p) => p.id === payload.new.id || (p.match_id === payload.new.match_id && p.selection === payload.new.selection));
             return exists ? prev.map(p => (p.match_id === payload.new.match_id && p.selection === payload.new.selection ? payload.new : p)) : [...prev, payload.new];
           });
+          showToast(`🔔 Nuova proposta da ${payload.new.proposed_by || "un utente"}!`);
         } else if (payload.eventType === "UPDATE") {
           setPicks((prev) => prev.map((p) => (p.id === payload.new.id ? payload.new : p)));
         } else if (payload.eventType === "DELETE") {
@@ -179,7 +208,6 @@ export default function RoomPage() {
           if (payload.new.bet_mode) {
             const mapped = payload.new.bet_mode === "congiunta" ? "voto" : payload.new.bet_mode === "disgiunta" ? "libera" : payload.new.bet_mode;
             setBetMode(mapped);
-            showToast(`⚙️ Regole: ${mapped === "libera" ? "MODIFICA LIBERA" : "MODALITÀ A VOTO"}`);
           }
         }
       })
@@ -260,14 +288,12 @@ export default function RoomPage() {
     return picks.some((p) => p.match_id === matchId && p.selection === sel && p.status !== "rejected");
   }, [picks]);
 
-  // REGOLA ADM MULTIPLA STANDARD: UNA SOLA QUOTA PER MATCH (Sostituzione Automatica se c'è già un pronostico sulla stessa partita)
   const handlePickAction = async (match: any, market: string, selection: string, odds: number) => {
     const isDirect = betMode === "libera";
     const initialStatus = isDirect ? "confirmed" : "pending";
     const safeMatchId = match.id;
     const currentPicks = picksRef.current;
 
-    // 1. Se clicchi la stessa esatta quota già attiva -> Deseleziona
     const existingSameSelection = currentPicks.find(
       (p) => p.match_id === safeMatchId && p.selection === selection && p.status !== "rejected"
     );
@@ -276,18 +302,16 @@ export default function RoomPage() {
       if (betMode === "libera") {
         removePick(existingSameSelection.id);
       } else {
-        showToast("⚠️ Pronostico già proposto.");
+        showToast("⚠️ Pronostico già presente.");
       }
       return;
     }
 
-    // 2. REGOLA MULTIPLA: Cerca se c'è GIÀ un pronostico attivo su QUESTO STESSO MATCH (qualsiasi mercato)
     const existingMatchPick = currentPicks.find(
       (p) => p.match_id === safeMatchId && p.status !== "rejected"
     );
 
     if (existingMatchPick) {
-      // SOSTITUZIONE AUTOMATICA DEL MATCH IN SCHEDINA
       const updatedPick = {
         ...existingMatchPick,
         market,
@@ -298,7 +322,7 @@ export default function RoomPage() {
       };
 
       setPicks((prev) => prev.map((p) => (p.id === existingMatchPick.id ? updatedPick : p)));
-      showToast(`🔄 Sostituito: ${selection} (${market}) [1 quota per match]`);
+      showToast(`🔄 Sostituito: ${selection} (${market})`);
 
       try {
         await supabase
@@ -315,7 +339,6 @@ export default function RoomPage() {
       return;
     }
 
-    // 3. Inserimento nuovo pick se la partita non era in schedina
     const tempId = `pick_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const newPick = {
       id: tempId,
@@ -331,7 +354,7 @@ export default function RoomPage() {
     };
 
     setPicks((prev) => [...prev, newPick]);
-    showToast(isDirect ? `✅ Aggiunto: ${selection}` : `🗳️ Proposta: ${selection}`);
+    showToast(isDirect ? `✅ Aggiunto: ${selection}` : `🗳️ Proposta inviata in votazione!`);
 
     try {
       const { data, error } = await supabase.from("room_picks").insert({
@@ -342,6 +365,7 @@ export default function RoomPage() {
         selection,
         odds,
         proposed_by: nick,
+        votes: newPick.votes,
         status: initialStatus,
       }).select().single();
 
@@ -356,11 +380,18 @@ export default function RoomPage() {
     currentVotes[nick] = currentVotes[nick] === val ? 0 : val;
     if (currentVotes[nick] === 0) delete currentVotes[nick];
 
+    const totalVoters = Math.max(1, onlineUsers.length);
     const up = Object.values(currentVotes).filter((v: any) => v > 0).length;
     const down = Object.values(currentVotes).filter((v: any) => v < 0).length;
+
     let status = pick.status;
-    if (up >= 2 && up > down) status = "confirmed";
-    if (down >= 2 && down > up) status = "rejected";
+    const majorityThreshold = Math.ceil(totalVoters / 2);
+    if (up >= majorityThreshold && up > down) {
+      status = "confirmed";
+      showToast(`🎉 Proposta approvata a maggioranza! Aggiunta alla Schedina Squad.`);
+    } else if (down >= majorityThreshold && down > up) {
+      status = "rejected";
+    }
 
     setPicks((prev) => prev.map((p) => (p.id === pick.id ? { ...p, votes: currentVotes, status } : p)));
     try {
@@ -395,6 +426,7 @@ export default function RoomPage() {
 
   const confirmed = picks.filter((p) => p.status === "confirmed");
   const pending = picks.filter((p) => p.status === "pending");
+  const historyPicks = picks.filter((p) => p.status === "confirmed" || p.status === "rejected");
 
   const rawMultiplier = confirmed.reduce((acc, p) => acc * Number(p.odds), 1);
   const totalOdds = confirmed.length > 0 ? (Math.round(rawMultiplier * 100) / 100).toFixed(2) : "0.00";
@@ -412,6 +444,27 @@ export default function RoomPage() {
   const stakePerHead = confirmed.length > 0 ? (stake / safeParticipants).toFixed(2) : "0.00";
   const winPerHead = (Number(potentialWin) / safeParticipants).toFixed(2);
 
+  const bookmakersConfig = [
+    { name: "Sisal.it", logo: "🟢", bonus: 1.05, link: "https://www.sisal.it", supportedMarkets: ["1X2", "Doppia Chance", "Under/Over", "Goal/NoGoal", "Multigoal", "Combo 1X2 + U/O", "Risultato Esatto"] },
+    { name: "Snai.it", logo: "🔵", bonus: 1.04, link: "https://www.snai.it", supportedMarkets: ["1X2", "Doppia Chance", "Under/Over", "Goal/NoGoal", "Multigoal", "Marcatore", "Corner U/O"] },
+    { name: "GoldBet", logo: "🟡", bonus: 1.03, link: "https://www.goldbet.it", supportedMarkets: ["1X2", "Doppia Chance", "Under/Over", "Goal/NoGoal", "Multigoal", "Cartellini U/O"] },
+    { name: "Bet365", logo: "🟠", bonus: 1.06, link: "https://www.bet365.it", supportedMarkets: ["1X2", "Doppia Chance", "Under/Over", "Goal/NoGoal", "Multigoal", "Marcatore", "Risultato Esatto", "Corner U/O", "Cartellini U/O", "Monitor VAR"] },
+    { name: "Eurobet", logo: "🔵", bonus: 1.02, link: "https://www.eurobet.it", supportedMarkets: ["1X2", "Doppia Chance", "Under/Over", "Goal/NoGoal", "Multigoal", "1X2 1° Tempo"] }
+  ];
+
+  const evaluatedBookmakers = useMemo(() => {
+    return bookmakersConfig.map((b) => {
+      const supportsAll = confirmed.every((c) => b.supportedMarkets.some(m => c.market.includes(m) || m.includes(c.market)));
+      const rawPayout = Number(potentialWin) * b.bonus;
+      const finalPayout = Math.min(50000, Math.round(rawPayout * 100) / 100);
+      return {
+        ...b,
+        supportsAll,
+        finalPayout: finalPayout.toFixed(2)
+      };
+    }).sort((x, y) => Number(y.finalPayout) - Number(x.finalPayout));
+  }, [confirmed, potentialWin]);
+
   const copyForWhatsApp = () => {
     const text = `🔥 BetSquad [${roomId}]\n` +
       `📌 Sessione: ${roomName}\n` +
@@ -427,6 +480,20 @@ export default function RoomPage() {
 
     navigator.clipboard.writeText(text);
     showToast("📋 Schedina copiata per WhatsApp!");
+  };
+
+  const shareRoomLink = () => {
+    const shareData = {
+      title: "BetSquad - Schedina Condivisa",
+      text: `Unisciti alla mia stanza su BetSquad per costruire la schedina insieme! [Stanza: ${roomId}]`,
+      url: window.location.href
+    };
+    if (navigator.share) {
+      navigator.share(shareData).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(window.location.href);
+      showToast("🔗 Link stanza copiato negli appunti!");
+    }
   };
 
   const drawRoundedRect = (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) => {
@@ -560,12 +627,6 @@ export default function RoomPage() {
     showToast("📸 Card Storia scaricata!");
   };
 
-  const bookmakers = [
-    { name: "Sisal.it", bonus: 1.05, link: "https://www.sisal.it" },
-    { name: "Snai.it", bonus: 1.04, link: "https://www.snai.it" },
-    { name: "GoldBet", bonus: 1.03, link: "https://www.goldbet.it" },
-  ];
-
   const competitions = [
     { name: "Serie A TIM", code: "IT", region: "Italia" },
     { name: "Premier League", code: "EN", region: "Inghilterra" },
@@ -573,6 +634,10 @@ export default function RoomPage() {
     { name: "Bundesliga", code: "DE", region: "Germania" },
     { name: "Champions League", code: "EU", region: "Europa" }
   ];
+
+  const filteredCompetitions = useMemo(() => {
+    return competitions.filter(c => c.name.toLowerCase().includes(searchLeagueQuery.toLowerCase()));
+  }, [searchLeagueQuery]);
 
   const detailCategories = [
     "PRINCIPALI", "COMBO", "MULTIGOAL", "GIOCATORI", "MULTI GIOCATORI",
@@ -588,83 +653,22 @@ export default function RoomPage() {
     switch (category) {
       case "PRINCIPALI":
         return [
-          {
-            title: "Esito Finale 1X2",
-            market: "1X2",
-            cols: 3,
-            items: [
-              { label: "1", odds: base1 },
-              { label: "X", odds: baseX },
-              { label: "2", odds: base2 }
-            ]
-          },
-          {
-            title: "Doppia Chance",
-            market: "Doppia Chance",
-            cols: 3,
-            items: [
-              { label: "1X", odds: Number(m.oddsDC?.["1X"] || 1.30) },
-              { label: "12", odds: Number(m.oddsDC?.["12"] || 1.32) },
-              { label: "X2", odds: Number(m.oddsDC?.["X2"] || 1.68) }
-            ]
-          },
-          {
-            title: "Under / Over 2.5",
-            market: "Under/Over",
-            cols: 2,
-            items: [
-              { label: "Under 2.5", odds: Number(m.oddsUO?.["Under 2.5"] || 1.85) },
-              { label: "Over 2.5", odds: Number(m.oddsUO?.["Over 2.5"] || 1.95) }
-            ]
-          },
-          {
-            title: "Goal / NoGoal",
-            market: "Goal/NoGoal",
-            cols: 2,
-            items: [
-              { label: "Goal", odds: Number(m.oddsGG?.["Goal"] || 1.75) },
-              { label: "NoGoal", odds: Number(m.oddsGG?.["NoGoal"] || 2.05) }
-            ]
-          }
+          { title: "Esito Finale 1X2", market: "1X2", cols: 3, items: [{ label: "1", odds: base1 }, { label: "X", odds: baseX }, { label: "2", odds: base2 }] },
+          { title: "Doppia Chance", market: "Doppia Chance", cols: 3, items: [{ label: "1X", odds: Number(m.oddsDC?.["1X"] || 1.30) }, { label: "12", odds: Number(m.oddsDC?.["12"] || 1.32) }, { label: "X2", odds: Number(m.oddsDC?.["X2"] || 1.68) }] },
+          { title: "Under / Over 2.5", market: "Under/Over", cols: 2, items: [{ label: "Under 2.5", odds: Number(m.oddsUO?.["Under 2.5"] || 1.85) }, { label: "Over 2.5", odds: Number(m.oddsUO?.["Over 2.5"] || 1.95) }] },
+          { title: "Goal / NoGoal", market: "Goal/NoGoal", cols: 2, items: [{ label: "Goal", odds: Number(m.oddsGG?.["Goal"] || 1.75) }, { label: "NoGoal", odds: Number(m.oddsGG?.["NoGoal"] || 2.05) }] }
         ];
       case "COMBO":
         return [
-          {
-            title: "1X2 + Under/Over 2.5",
-            market: "Combo 1X2 + U/O",
-            cols: 3,
-            items: [
-              { label: "1 + Over 2.5", odds: Number((base1 * 1.55).toFixed(2)) },
-              { label: "X + Over 2.5", odds: Number((baseX * 2.10).toFixed(2)) },
-              { label: "2 + Over 2.5", odds: Number((base2 * 1.60).toFixed(2)) },
-              { label: "1 + Under 2.5", odds: Number((base1 * 1.80).toFixed(2)) }
-            ]
-          }
+          { title: "1X2 + Under/Over 2.5", market: "Combo 1X2 + U/O", cols: 3, items: [{ label: "1 + Over 2.5", odds: Number((base1 * 1.55).toFixed(2)) }, { label: "X + Over 2.5", odds: Number((baseX * 2.10).toFixed(2)) }, { label: "2 + Over 2.5", odds: Number((base2 * 1.60).toFixed(2)) }] }
         ];
       case "MULTIGOAL":
         return [
-          {
-            title: "Multigoal Totali",
-            market: "Multigoal",
-            cols: 3,
-            items: [
-              { label: "1-3 Goal", odds: 1.42 },
-              { label: "2-4 Goal", odds: 1.50 },
-              { label: "2-5 Goal", odds: 1.33 }
-            ]
-          }
+          { title: "Multigoal Totali", market: "Multigoal", cols: 3, items: [{ label: "1-3 Goal", odds: 1.42 }, { label: "2-4 Goal", odds: 1.50 }, { label: "2-5 Goal", odds: 1.33 }] }
         ];
       default:
         return [
-          {
-            title: `Opzioni ${category}`,
-            market: category,
-            cols: 2,
-            items: [
-              { label: "Esito A", odds: 1.85 },
-              { label: "Esito B", odds: 1.90 }
-            ]
-          }
+          { title: `Opzioni ${category}`, market: category, cols: 2, items: [{ label: "Esito A", odds: 1.85 }, { label: "Esito B", odds: 1.90 }] }
         ];
     }
   };
@@ -674,12 +678,88 @@ export default function RoomPage() {
       <canvas ref={canvasRef} className="hidden" />
 
       {toast && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-[#0084ff] text-white text-[11px] font-bold px-4 py-2 rounded-full shadow-2xl border border-white/20">
-          {toast}
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-[#0084ff] text-white text-[11px] font-bold px-4 py-2 rounded-full shadow-2xl border border-white/20 flex items-center gap-1.5 animate-bounce">
+          <Sparkles className="w-3.5 h-3.5" />
+          <span>{toast}</span>
         </div>
       )}
 
-      {/* MODAL DETTAGLIO PARTITA */}
+      {showInviteModal && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setShowInviteModal(false)}
+        >
+          <div 
+            className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-xl max-w-sm w-full p-5 shadow-2xl space-y-4 text-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-2">
+              <span className="font-black text-sm uppercase tracking-wider text-white flex items-center gap-1.5">
+                <Users className="w-4 h-4 text-[#0084ff]" /> Invita Amici
+              </span>
+              <button onClick={() => setShowInviteModal(false)} className="text-sm font-bold text-[var(--text-muted)] hover:text-white px-2 py-0.5 rounded bg-[var(--surface-quote)] cursor-pointer">✕</button>
+            </div>
+
+            <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+              Condividi il link della stanza <span className="font-mono text-[#0084ff] font-bold">[{roomId}]</span> per costruire la schedina insieme in tempo reale!
+            </p>
+
+            <div className="bg-[var(--surface-sub)] p-3 rounded-lg border border-[var(--border-subtle)] flex items-center justify-center">
+              <img 
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(typeof window !== "undefined" ? window.location.href : "")}`} 
+                alt="QR Code Stanza"
+                className="w-32 h-32 rounded bg-white p-1"
+              />
+            </div>
+
+            <div className="space-y-2 pt-2">
+              <button
+                onClick={shareRoomLink}
+                className="w-full py-2.5 bg-[#0084ff] hover:bg-[#0073e6] text-white text-xs font-bold uppercase rounded-lg cursor-pointer flex items-center justify-center gap-2 shadow-sm transition"
+              >
+                <Share2 className="w-4 h-4" /> Condividi Link / WhatsApp
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showRulesModal && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setShowRulesModal(false)}
+        >
+          <div 
+            className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-xl max-w-lg w-full p-5 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-2">
+              <span className="font-black text-sm uppercase tracking-wider text-white flex items-center gap-1.5">
+                <Scale className="w-4 h-4 text-[#0084ff]" /> Regolamento Scommesse ADM
+              </span>
+              <button onClick={() => setShowRulesModal(false)} className="text-sm font-bold text-[var(--text-muted)] hover:text-white px-2 py-0.5 rounded bg-[var(--surface-quote)] cursor-pointer">✕</button>
+            </div>
+
+            <div className="space-y-3 text-xs leading-relaxed text-[var(--text-muted)]">
+              <div>
+                <h4 className="font-bold text-white uppercase text-[11px]">1. Importi di Puntata e Vincita Massima</h4>
+                <p>La puntata minima ammessa è di <strong>1,00 €</strong>. Il massimale di vincita per singolo biglietto è fissato a <strong>€ 50.000,00</strong> a norma di legge ADM.</p>
+              </div>
+              <div>
+                <h4 className="font-bold text-white uppercase text-[11px]">2. Regola 1 Quota per Match</h4>
+                <p>Nella multipla standard è ammessa una sola selezione per incontro. Scegliendo un nuovo mercato, il sistema effettua la sostituzione automatica.</p>
+              </div>
+              <div>
+                <h4 className="font-bold text-white uppercase text-[11px]">3. Bonus Multipla Progressivo</h4>
+                <p>Eventi con quota $\ge 1.25$ attivano il bonus dal 5° evento (+5%) con incremento incrementale.</p>
+              </div>
+            </div>
+
+            <button onClick={() => setShowRulesModal(false)} className="w-full py-2 bg-[#0084ff] text-white text-xs font-bold uppercase rounded-lg cursor-pointer">Ho Capito</button>
+          </div>
+        </div>
+      )}
+
       {detailMatch && (
         <div 
           className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4"
@@ -698,25 +778,16 @@ export default function RoomPage() {
                   {detailMatch.home} <span className="text-[var(--text-muted)] font-normal">vs</span> {detailMatch.away}
                 </h3>
               </div>
-              <button
-                type="button"
-                onClick={() => setDetailMatch(null)}
-                className="w-8 h-8 rounded-full bg-[var(--surface-quote)] flex items-center justify-center text-sm font-bold text-[var(--text-muted)] hover:text-white cursor-pointer"
-              >
-                ✕
-              </button>
+              <button onClick={() => setDetailMatch(null)} className="w-8 h-8 rounded-full bg-[var(--surface-quote)] flex items-center justify-center text-sm font-bold text-[var(--text-muted)] hover:text-white cursor-pointer">✕</button>
             </div>
 
             <div className="bg-[var(--surface-sub)] border-b border-[var(--border-subtle)] px-2.5 py-2 overflow-x-auto flex gap-1.5 no-scrollbar shrink-0">
               {detailCategories.map((cat) => (
                 <button
                   key={cat}
-                  type="button"
                   onClick={() => setDetailCategory(cat)}
                   className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition cursor-pointer ${
-                    detailCategory === cat
-                      ? "bg-[#0084ff] text-white shadow-sm"
-                      : "bg-[var(--surface-quote)] text-[var(--text-muted)]"
+                    detailCategory === cat ? "bg-[#0084ff] text-white shadow-sm" : "bg-[var(--surface-quote)] text-[var(--text-muted)]"
                   }`}
                 >
                   {cat}
@@ -728,7 +799,7 @@ export default function RoomPage() {
               {getMarketsForMatch(detailMatch, detailCategory).map((group: any) => (
                 <div key={group.title} className="bg-[var(--surface-header)] border border-[var(--border-subtle)] rounded-lg overflow-hidden shadow-sm">
                   <div className="bg-[var(--surface-sub)] px-3 py-2 text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] border-b border-[var(--border-subtle)]">
-                    {group.title} (1 quota per match)
+                    {group.title}
                   </div>
                   <div className={`p-2.5 grid gap-2 ${group.cols === 3 ? "grid-cols-3" : group.cols === 2 ? "grid-cols-2" : "grid-cols-1"}`}>
                     {group.items.map((item: any) => {
@@ -736,12 +807,9 @@ export default function RoomPage() {
                       return (
                         <button
                           key={item.label}
-                          type="button"
                           onClick={() => handlePickAction(detailMatch, group.market, item.label, item.odds)}
                           className={`min-h-[46px] p-2 flex flex-col items-center justify-center rounded-lg border transition cursor-pointer active:scale-95 text-center ${
-                            selected
-                              ? "bg-[#0084ff] border-white text-white shadow-md font-black"
-                              : "bg-[var(--surface-quote)] hover:bg-[var(--surface-quote-hover)] border-[var(--border-subtle)] text-[var(--quote-val)]"
+                            selected ? "bg-[#0084ff] border-white text-white shadow-md font-black" : "bg-[var(--surface-quote)] hover:bg-[var(--surface-quote-hover)] border-[var(--border-subtle)] text-[var(--quote-val)]"
                           }`}
                         >
                           <span className="text-[11px] leading-tight text-[var(--text-muted)] font-semibold mb-0.5">{item.label}</span>
@@ -757,7 +825,6 @@ export default function RoomPage() {
         </div>
       )}
 
-      {/* Header */}
       <header className="bg-[var(--surface-header)] border-b border-[var(--border-subtle)] sticky top-0 z-30 px-3 py-2 flex items-center justify-between gap-2 shadow-sm">
         <div className="flex items-center gap-1.5 shrink-0">
           <span className="bg-[#0084ff] text-white font-black text-[11px] px-2 py-0.5 rounded">BET</span>
@@ -787,34 +854,43 @@ export default function RoomPage() {
 
         <div className="flex items-center gap-1.5 shrink-0">
           <button
-            onClick={() => setShowRulesModal(true)}
-            className="h-9 px-2.5 rounded-lg bg-[var(--surface-quote)] border border-[var(--border-subtle)] text-xs font-bold hover:border-[#0084ff] transition cursor-pointer shadow-sm flex items-center gap-1"
+            onClick={() => setShowInviteModal(true)}
+            className="h-9 px-3 rounded-lg bg-[#0084ff] hover:bg-[#0073e6] text-white text-xs font-bold transition cursor-pointer shadow-sm flex items-center gap-1.5"
+            title="Invita amici"
           >
-            <span>⚖️</span>
-            <span className="hidden sm:inline text-[11px]">Regole</span>
+            <Users className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Invita</span>
+          </button>
+          <button
+            onClick={() => setShowRulesModal(true)}
+            className="w-9 h-9 flex items-center justify-center rounded-lg bg-[var(--surface-quote)] border border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-white transition cursor-pointer shadow-sm"
+            title="Regolamento ADM"
+          >
+            <Scale className="w-4 h-4" />
           </button>
           <button
             onClick={exportStoryCard}
-            className="w-9 h-9 flex items-center justify-center rounded-lg bg-[var(--surface-quote)] border border-[var(--border-subtle)] text-base hover:border-[#0084ff] transition cursor-pointer shadow-sm active:scale-95"
+            className="w-9 h-9 flex items-center justify-center rounded-lg bg-[var(--surface-quote)] border border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-white transition cursor-pointer shadow-sm"
+            title="Scarica Card Instagram"
           >
-            📸
+            <Camera className="w-4 h-4" />
           </button>
           <button
             onClick={toggleTheme}
-            className="w-9 h-9 flex items-center justify-center rounded-lg bg-[var(--surface-quote)] border border-[var(--border-subtle)] text-base hover:border-[#0084ff] transition cursor-pointer shadow-sm active:scale-95"
+            className="w-9 h-9 flex items-center justify-center rounded-lg bg-[var(--surface-quote)] border border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-white transition cursor-pointer shadow-sm"
+            title="Cambia tema chiaro/scuro"
           >
-            {theme === "dark" ? "☀️" : "🌙"}
+            {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
           <button
             onClick={copyForWhatsApp}
-            className="h-9 px-3.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center justify-center cursor-pointer shadow-sm transition active:scale-95"
+            className="h-9 px-3.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg flex items-center justify-center cursor-pointer shadow-sm transition"
           >
             <span>Invia</span>
           </button>
         </div>
       </header>
 
-      {/* Barra Presenze & Switch Modalità */}
       <div className="bg-[var(--surface-card)] border-b border-[var(--border-subtle)] px-3 py-2 flex items-center justify-between text-xs">
         <div className="flex items-center gap-2 truncate pr-2">
           <span className="text-[var(--text-muted)] font-mono text-xs">{roomId}</span>
@@ -830,47 +906,36 @@ export default function RoomPage() {
           <div className="flex items-center gap-1 bg-[var(--bg-main)] p-1 rounded-md border border-[var(--border-subtle)] shrink-0">
             <button
               onClick={() => toggleBetMode("libera")}
-              className={`px-3 py-1 rounded text-xs font-bold transition cursor-pointer ${
-                betMode === "libera" ? "bg-[#0084ff] text-white shadow-sm" : "text-[var(--text-muted)] hover:text-white"
-              }`}
+              className={`px-3 py-1 rounded text-xs font-bold transition cursor-pointer ${betMode === "libera" ? "bg-[#0084ff] text-white shadow-sm" : "text-[var(--text-muted)] hover:text-white"}`}
             >
               ⚡ Libera
             </button>
             <button
               onClick={() => toggleBetMode("voto")}
-              className={`px-3 py-1 rounded text-xs font-bold transition cursor-pointer ${
-                betMode === "voto" ? "bg-[#0084ff] text-white shadow-sm" : "text-[var(--text-muted)] hover:text-white"
-              }`}
+              className={`px-3 py-1 rounded text-xs font-bold transition cursor-pointer ${betMode === "voto" ? "bg-[#0084ff] text-white shadow-sm" : "text-[var(--text-muted)] hover:text-white"}`}
             >
               🗳️ A Voto
             </button>
           </div>
         ) : (
-          <span className={`text-xs font-bold px-2 py-1 rounded ${
-            betMode === "libera" ? "text-emerald-500 bg-emerald-500/10" : "text-amber-500 bg-amber-500/10"
-          }`}>
+          <span className={`text-xs font-bold px-2 py-1 rounded ${betMode === "libera" ? "text-emerald-500 bg-emerald-500/10" : "text-amber-500 bg-amber-500/10"}`}>
             {betMode === "libera" ? "⚡ Libera" : "🗳️ A Voto"}
           </span>
         )}
       </div>
 
-      {/* Tabs Principali */}
       <div className="bg-[var(--surface-header)] border-b border-[var(--border-subtle)] px-3 flex text-xs font-bold uppercase tracking-wider overflow-x-auto no-scrollbar">
         <button
           onClick={() => setActiveTab("palinsesto")}
-          className={`py-2 px-4 transition whitespace-nowrap border-b-2 cursor-pointer ${
-            activeTab === "palinsesto" ? "text-[#0084ff] border-[#0084ff]" : "text-[var(--text-muted)] border-transparent"
-          }`}
+          className={`py-2 px-4 transition whitespace-nowrap border-b-2 cursor-pointer ${activeTab === "palinsesto" ? "text-[#0084ff] border-[#0084ff]" : "text-[var(--text-muted)] border-transparent"}`}
         >
           Palinsesto Quote
         </button>
         <button
           onClick={() => setActiveTab("voti")}
-          className={`py-2 px-4 flex items-center gap-1.5 whitespace-nowrap border-b-2 cursor-pointer ${
-            activeTab === "voti" ? "text-[#0084ff] border-[#0084ff]" : "text-[var(--text-muted)] border-transparent"
-          }`}
+          className={`py-2 px-4 flex items-center gap-1.5 whitespace-nowrap border-b-2 cursor-pointer ${activeTab === "voti" ? "text-[#0084ff] border-[#0084ff]" : "text-[var(--text-muted)] border-transparent"}`}
         >
-          Votazioni
+          Votazioni Live
           {pending.length > 0 && (
             <span className="px-1.5 py-0.5 rounded-full text-[9px] bg-amber-500/20 text-amber-500 font-mono">
               {pending.length}
@@ -879,69 +944,65 @@ export default function RoomPage() {
         </button>
         <button
           onClick={() => setActiveTab("schedina")}
-          className={`py-2 px-4 flex items-center gap-1.5 whitespace-nowrap border-b-2 cursor-pointer ${
-            activeTab === "schedina" ? "text-[#0084ff] border-[#0084ff]" : "text-[var(--text-muted)] border-transparent"
-          }`}
+          className={`py-2 px-4 flex items-center gap-1.5 whitespace-nowrap border-b-2 cursor-pointer ${activeTab === "schedina" ? "text-[#0084ff] border-[#0084ff]" : "text-[var(--text-muted)] border-transparent"}`}
         >
           Schedina Squad
           <span className="px-1.5 py-0.5 rounded-full text-[9px] bg-emerald-500/20 text-emerald-500 font-mono">
             {confirmed.length}
           </span>
         </button>
+        <button
+          onClick={() => setActiveTab("storico")}
+          className={`py-2 px-4 flex items-center gap-1.5 whitespace-nowrap border-b-2 cursor-pointer ${activeTab === "storico" ? "text-[#0084ff] border-[#0084ff]" : "text-[var(--text-muted)] border-transparent"}`}
+        >
+          Storico Voti
+        </button>
       </div>
 
-      {/* Selettore Competizioni Mobile */}
-      {activeTab === "palinsesto" && (
-        <div className="md:hidden bg-[var(--surface-card)] border-b border-[var(--border-subtle)] px-2.5 py-2 overflow-x-auto flex gap-1.5 no-scrollbar">
-          {competitions.map((comp) => (
-            <button
-              key={comp.name}
-              onClick={() => setSelectedLeague(comp.name)}
-              className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap flex items-center gap-1.5 border transition cursor-pointer ${
-                selectedLeague === comp.name
-                  ? "bg-[#0084ff] border-[#0084ff] text-white shadow-sm"
-                  : "bg-[var(--surface-quote)] border-[var(--border-subtle)] text-[var(--text-muted)]"
-              }`}
-            >
-              <span className="font-mono text-[10px] uppercase font-bold bg-white/10 px-1 rounded">{comp.code}</span>
-              <span>{comp.name}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Main Layout */}
       <main className="p-2 sm:p-4 w-full">
         {activeTab === "palinsesto" && (
           <div className="flex flex-col md:flex-row gap-3 items-start w-full">
-            {/* Sidebar Desktop Altre Competizioni */}
-            <aside className="hidden md:block w-64 shrink-0 bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-3 shadow-sm">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)] pb-2 mb-2 border-b border-[var(--border-subtle)] flex items-center justify-between">
-                <span>Altre Competizioni</span>
+            <aside className="hidden md:block w-64 shrink-0 bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-3 shadow-sm space-y-3">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-[var(--text-muted)]" />
+                <input
+                  type="text"
+                  placeholder="Cerca campionato..."
+                  value={searchLeagueQuery}
+                  onChange={(e) => setSearchLeagueQuery(e.target.value)}
+                  className="w-full h-8 pl-8 pr-2 bg-[var(--surface-sub)] border border-[var(--border-subtle)] rounded text-xs text-[var(--text-main)] focus:outline-none focus:border-[#0084ff]"
+                />
+              </div>
+
+              <div className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)] pb-1 border-b border-[var(--border-subtle)] flex items-center justify-between">
+                <span>Competizioni</span>
                 <span className="text-[10px] text-[#0084ff] font-bold">CALCIO</span>
               </div>
+
               <div className="space-y-1">
-                {competitions.map((comp) => (
-                  <button
-                    key={comp.name}
-                    onClick={() => setSelectedLeague(comp.name)}
-                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-md text-xs font-bold transition cursor-pointer ${
-                      selectedLeague === comp.name
-                        ? "bg-[#0084ff] text-white shadow-sm"
-                        : "bg-[var(--surface-quote)] hover:bg-[var(--surface-quote-hover)] text-[var(--text-main)]"
-                    }`}
-                  >
-                    <span className="flex items-center gap-2">
-                      <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/25">{comp.code}</span>
-                      <span>{comp.name}</span>
-                    </span>
-                    <span className="text-[10px] opacity-75 font-mono">➔</span>
-                  </button>
-                ))}
+                {filteredCompetitions.map((comp) => {
+                  const isPinned = pinnedLeagues.includes(comp.name);
+                  return (
+                    <button
+                      key={comp.name}
+                      onClick={() => setSelectedLeague(comp.name)}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-xs font-bold transition cursor-pointer ${
+                        selectedLeague === comp.name ? "bg-[#0084ff] text-white shadow-sm" : "bg-[var(--surface-quote)] hover:bg-[var(--surface-quote-hover)] text-[var(--text-main)]"
+                      }`}
+                    >
+                      <span className="flex items-center gap-2 truncate">
+                        <span className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded bg-black/25">{comp.code}</span>
+                        <span className="truncate">{comp.name}</span>
+                      </span>
+                      <span onClick={(e) => togglePinLeague(comp.name, e)} className="p-1 hover:opacity-100 opacity-60">
+                        {isPinned ? <Pin className="w-3 h-3 fill-current text-amber-400" /> : <PinOff className="w-3 h-3" />}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </aside>
 
-            {/* Tabella Palinsesto */}
             <div className="flex-1 min-w-0 w-full space-y-3">
               <div className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shadow-sm">
                 <div className="flex items-center gap-2">
@@ -952,21 +1013,11 @@ export default function RoomPage() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-1.5 bg-[var(--bg-main)] p-1 rounded-lg border border-[var(--border-subtle)] w-full sm:w-auto overflow-x-auto">
-                  {[
-                    { id: "1X2", label: "Esito Finale 1x2" },
-                    { id: "DC", label: "Doppia Chance" },
-                    { id: "UO", label: "Under/Over" },
-                    { id: "GG", label: "Goal/NoGoal" },
-                    { id: "MG", label: "Multigoal" }
-                  ].map((m) => (
+                  {[{ id: "1X2", label: "Esito Finale 1x2" }, { id: "DC", label: "Doppia Chance" }, { id: "UO", label: "Under/Over" }, { id: "GG", label: "Goal/NoGoal" }, { id: "MG", label: "Multigoal" }].map((m) => (
                     <button
                       key={m.id}
                       onClick={() => setMarketFilter(m.id as any)}
-                      className={`px-3 py-1.5 rounded-md text-xs font-bold transition cursor-pointer whitespace-nowrap ${
-                        marketFilter === m.id
-                          ? "bg-[#0084ff] text-white shadow-sm"
-                          : "text-[var(--text-muted)] hover:text-white"
-                      }`}
+                      className={`px-3 py-1.5 rounded-md text-xs font-bold transition cursor-pointer whitespace-nowrap ${marketFilter === m.id ? "bg-[#0084ff] text-white shadow-sm" : "text-[var(--text-muted)] hover:text-white"}`}
                     >
                       {m.label}
                     </button>
@@ -975,8 +1026,23 @@ export default function RoomPage() {
               </div>
 
               {loading ? (
-                <div className="text-center py-12 text-xs text-[var(--text-muted)] bg-[var(--surface-card)] rounded-lg border border-[var(--border-subtle)]">
-                  Caricamento quote in corso...
+                <div className="space-y-3">
+                  {[1, 2, 3].map((n) => (
+                    <div key={n} className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-4 animate-pulse space-y-3">
+                      <div className="h-4 bg-white/10 rounded w-1/4"></div>
+                      <div className="flex justify-between items-center">
+                        <div className="space-y-2 w-1/2">
+                          <div className="h-3 bg-white/10 rounded w-3/4"></div>
+                          <div className="h-3 bg-white/10 rounded w-1/2"></div>
+                        </div>
+                        <div className="flex gap-2">
+                          <div className="w-16 h-10 bg-white/10 rounded"></div>
+                          <div className="w-16 h-10 bg-white/10 rounded"></div>
+                          <div className="w-16 h-10 bg-white/10 rounded"></div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : Object.keys(groupedMatches).length === 0 ? (
                 <div className="text-center py-12 text-xs text-[var(--text-muted)] bg-[var(--surface-card)] rounded-lg border border-[var(--border-subtle)]">
@@ -995,19 +1061,12 @@ export default function RoomPage() {
 
                       <div className="divide-y divide-[var(--border-subtle)]">
                         {matchList.map((m) => {
-                          const timeStr = new Date(m.commence_time).toLocaleTimeString("it-IT", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          });
+                          const timeStr = new Date(m.commence_time).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
 
                           return (
                             <div key={`row_${m.id}`} className="p-3 flex items-center justify-between gap-2 relative">
-                              {/* APERTURA MODALE TUTTI I MERCATI */}
                               <div 
-                                onClick={() => {
-                                  setDetailMatch(m);
-                                  setDetailCategory("PRINCIPALI");
-                                }}
+                                onClick={() => { setDetailMatch(m); setDetailCategory("PRINCIPALI"); }}
                                 className="min-w-0 flex-1 pr-2 cursor-pointer group select-none"
                                 title="Clicca per aprire tutte le opzioni scommessa del match"
                               >
@@ -1031,15 +1090,8 @@ export default function RoomPage() {
                                         <button
                                           key={`btn_${m.id}_1X2_${lbl}`}
                                           type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handlePickAction(m, "1X2", lbl, val);
-                                          }}
-                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer active:scale-95 select-none ${
-                                            selected
-                                              ? "bg-[#0084ff] border-white text-white shadow-sm font-black"
-                                              : "bg-[var(--surface-quote)] hover:bg-[var(--surface-quote-hover)] active:bg-[#0084ff]/20 border-[var(--border-subtle)] text-[var(--quote-val)]"
-                                          }`}
+                                          onClick={(e) => { e.stopPropagation(); handlePickAction(m, "1X2", lbl, val); }}
+                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer active:scale-95 select-none ${selected ? "bg-[#0084ff] border-white text-white shadow-sm font-black" : "bg-[var(--surface-quote)] hover:bg-[var(--surface-quote-hover)] active:bg-[#0084ff]/20 border-[var(--border-subtle)] text-[var(--quote-val)]"}`}
                                         >
                                           <span className="text-[9px] text-[var(--text-muted)] leading-none">{lbl}</span>
                                           <span className="text-xs font-bold font-mono tabular-nums leading-tight">{val.toFixed(2)}</span>
@@ -1048,7 +1100,6 @@ export default function RoomPage() {
                                     })}
                                   </div>
                                 )}
-
                                 {marketFilter === "DC" && (
                                   <div className="grid grid-cols-3 gap-1.5 w-[190px] sm:w-[220px]">
                                     {(["1X", "12", "X2"] as const).map((lbl) => {
@@ -1058,15 +1109,8 @@ export default function RoomPage() {
                                         <button
                                           key={`btn_${m.id}_DC_${lbl}`}
                                           type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handlePickAction(m, "Doppia Chance", lbl, val);
-                                          }}
-                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer active:scale-95 select-none ${
-                                            selected
-                                              ? "bg-[#0084ff] border-white text-white shadow-sm font-black"
-                                              : "bg-[var(--surface-quote)] hover:bg-[var(--surface-quote-hover)] active:bg-[#0084ff]/20 border-[var(--border-subtle)] text-[var(--quote-val)]"
-                                          }`}
+                                          onClick={(e) => { e.stopPropagation(); handlePickAction(m, "Doppia Chance", lbl, val); }}
+                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer active:scale-95 select-none ${selected ? "bg-[#0084ff] border-white text-white shadow-sm font-black" : "bg-[var(--surface-quote)] hover:bg-[var(--surface-quote-hover)] active:bg-[#0084ff]/20 border-[var(--border-subtle)] text-[var(--quote-val)]"}`}
                                         >
                                           <span className="text-[9px] text-[var(--text-muted)] leading-none">{lbl}</span>
                                           <span className="text-xs font-bold font-mono tabular-nums leading-tight">{val.toFixed(2)}</span>
@@ -1075,7 +1119,6 @@ export default function RoomPage() {
                                     })}
                                   </div>
                                 )}
-
                                 {marketFilter === "UO" && (
                                   <div className="grid grid-cols-2 gap-1.5 w-[190px] sm:w-[220px]">
                                     {(["Over 2.5", "Under 2.5"] as const).map((lbl) => {
@@ -1085,15 +1128,8 @@ export default function RoomPage() {
                                         <button
                                           key={`btn_${m.id}_UO_${lbl}`}
                                           type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handlePickAction(m, "Under/Over", lbl, val);
-                                          }}
-                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer active:scale-95 select-none ${
-                                            selected
-                                              ? "bg-[#0084ff] border-white text-white shadow-sm font-black"
-                                              : "bg-[var(--surface-quote)] hover:bg-[var(--surface-quote-hover)] active:bg-[#0084ff]/20 border-[var(--border-subtle)] text-[var(--quote-val)]"
-                                          }`}
+                                          onClick={(e) => { e.stopPropagation(); handlePickAction(m, "Under/Over", lbl, val); }}
+                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer active:scale-95 select-none ${selected ? "bg-[#0084ff] border-white text-white shadow-sm font-black" : "bg-[var(--surface-quote)] hover:bg-[var(--surface-quote-hover)] active:bg-[#0084ff]/20 border-[var(--border-subtle)] text-[var(--quote-val)]"}`}
                                         >
                                           <span className="text-[9px] text-[var(--text-muted)] leading-none">{lbl}</span>
                                           <span className="text-xs font-bold font-mono tabular-nums leading-tight">{val.toFixed(2)}</span>
@@ -1102,7 +1138,6 @@ export default function RoomPage() {
                                     })}
                                   </div>
                                 )}
-
                                 {marketFilter === "GG" && (
                                   <div className="grid grid-cols-2 gap-1.5 w-[190px] sm:w-[220px]">
                                     {(["Goal", "NoGoal"] as const).map((lbl) => {
@@ -1112,15 +1147,8 @@ export default function RoomPage() {
                                         <button
                                           key={`btn_${m.id}_GG_${lbl}`}
                                           type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handlePickAction(m, "Goal/NoGoal", lbl, val);
-                                          }}
-                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer active:scale-95 select-none ${
-                                            selected
-                                              ? "bg-[#0084ff] border-white text-white shadow-sm font-black"
-                                              : "bg-[var(--surface-quote)] hover:bg-[var(--surface-quote-hover)] active:bg-[#0084ff]/20 border-[var(--border-subtle)] text-[var(--quote-val)]"
-                                          }`}
+                                          onClick={(e) => { e.stopPropagation(); handlePickAction(m, "Goal/NoGoal", lbl, val); }}
+                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer active:scale-95 select-none ${selected ? "bg-[#0084ff] border-white text-white shadow-sm font-black" : "bg-[var(--surface-quote)] hover:bg-[var(--surface-quote-hover)] active:bg-[#0084ff]/20 border-[var(--border-subtle)] text-[var(--quote-val)]"}`}
                                         >
                                           <span className="text-[9px] text-[var(--text-muted)] leading-none">{lbl}</span>
                                           <span className="text-xs font-bold font-mono tabular-nums leading-tight">{val.toFixed(2)}</span>
@@ -1129,7 +1157,6 @@ export default function RoomPage() {
                                     })}
                                   </div>
                                 )}
-
                                 {marketFilter === "MG" && (
                                   <div className="grid grid-cols-3 gap-1.5 w-[190px] sm:w-[220px]">
                                     {(["1-3 Goal", "2-4 Goal", "2-5 Goal"] as const).map((lbl) => {
@@ -1139,15 +1166,8 @@ export default function RoomPage() {
                                         <button
                                           key={`btn_${m.id}_MG_${lbl}`}
                                           type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handlePickAction(m, "Multigoal", lbl, val);
-                                          }}
-                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer active:scale-95 select-none ${
-                                            selected
-                                              ? "bg-[#0084ff] border-white text-white shadow-sm font-black"
-                                              : "bg-[var(--surface-quote)] hover:bg-[var(--surface-quote-hover)] active:bg-[#0084ff]/20 border-[var(--border-subtle)] text-[var(--quote-val)]"
-                                          }`}
+                                          onClick={(e) => { e.stopPropagation(); handlePickAction(m, "Multigoal", lbl, val); }}
+                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer active:scale-95 select-none ${selected ? "bg-[#0084ff] border-white text-white shadow-sm font-black" : "bg-[var(--surface-quote)] hover:bg-[var(--surface-quote-hover)] active:bg-[#0084ff]/20 border-[var(--border-subtle)] text-[var(--quote-val)]"}`}
                                         >
                                           <span className="text-[9px] text-[var(--text-muted)] leading-none">{lbl}</span>
                                           <span className="text-xs font-bold font-mono tabular-nums leading-tight">{val.toFixed(2)}</span>
@@ -1169,69 +1189,81 @@ export default function RoomPage() {
           </div>
         )}
 
-        {/* Tab 2: Votazioni */}
         {activeTab === "voti" && (
-          <div className="max-w-4xl mx-auto space-y-2">
+          <div className="max-w-4xl mx-auto space-y-3">
+            <div className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-3 text-xs text-[var(--text-muted)] flex items-center justify-between">
+              <span>🗳️ Regola di approvazione: <strong className="text-white">Maggioranza semplice (&gt;50% dei partecipanti online)</strong></span>
+              <span className="font-mono text-emerald-400">Partecipanti: {onlineUsers.length || 1}</span>
+            </div>
+
             {pending.length === 0 ? (
               <div className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-8 text-center text-xs text-[var(--text-muted)]">
-                Nessuna proposta in attesa di voto.
+                Nessuna proposta in attesa di voto al momento.
               </div>
             ) : (
               pending.map((p) => {
-                const up = Object.values(p.votes || {}).filter((v: any) => v > 0).length;
-                const down = Object.values(p.votes || {}).filter((v: any) => v < 0).length;
+                const totalVoters = Math.max(1, onlineUsers.length);
+                const votesObj = p.votes || {};
+                const up = Object.values(votesObj).filter((v: any) => v > 0).length;
+                const down = Object.values(votesObj).filter((v: any) => v < 0).length;
+                const totalVoted = up + down;
+                const pct = Math.round((totalVoted / totalVoters) * 100);
 
                 return (
-                  <div key={p.id} className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-3 space-y-2">
+                  <div key={p.id} className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-4 space-y-3 shadow-sm">
                     <div className="flex items-center justify-between">
                       <div className="pr-2 truncate">
-                        <div className="text-xs font-bold truncate">{p.match_label}</div>
+                        <div className="text-xs font-bold truncate text-white">{p.match_label}</div>
                         <div className="text-[11px] text-[var(--text-muted)]">
-                          <span className="text-[#0084ff] font-bold">{p.selection}</span> ({p.market}) da {p.proposed_by}
+                          Proposto da <span className="text-[#0084ff] font-bold">{p.proposed_by}</span> • <span className="text-white font-semibold">{p.selection}</span> ({p.market})
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="font-mono font-bold text-[var(--quote-val)] text-sm">@{Number(p.odds).toFixed(2)}</span>
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => votePick(p, 1)}
-                            className={`px-2 py-1 rounded text-xs font-bold cursor-pointer ${
-                              p.votes?.[nick] === 1 ? "bg-emerald-600 text-white" : "bg-[var(--surface-quote)]"
-                            }`}
-                          >
-                            👍 {up}
-                          </button>
-                          <button
-                            onClick={() => votePick(p, -1)}
-                            className={`px-2 py-1 rounded text-xs font-bold cursor-pointer ${
-                              p.votes?.[nick] === -1 ? "bg-rose-600 text-white" : "bg-[var(--surface-quote)]"
-                            }`}
-                          >
-                            👎 {down}
-                          </button>
-                        </div>
+                      <div className="shrink-0">
+                        <span className="font-mono font-bold text-amber-400 text-sm">@{Number(p.odds).toFixed(2)}</span>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5 pt-1 border-t border-[var(--border-subtle)] text-xs">
-                      <span className="text-[10px] text-[var(--text-muted)]">Reagisci:</span>
-                      {["🔥", "💣", "🔒", "🤡"].map((emoji) => {
-                        const count = (p.reactions?.[emoji] || []).length;
-                        const hasReacted = (p.reactions?.[emoji] || []).includes(nick);
-                        return (
-                          <button
-                            key={emoji}
-                            onClick={() => reactPick(p, emoji)}
-                            className={`px-1.5 py-0.5 rounded border text-[11px] transition cursor-pointer ${
-                              hasReacted
-                                ? "bg-[#0084ff]/20 border-[#0084ff] text-white"
-                                : "bg-[var(--surface-quote)] border-[var(--border-subtle)] text-[var(--text-muted)] hover:border-white/20"
-                            }`}
-                          >
-                            {emoji} {count > 0 && <span className="font-mono font-bold ml-0.5">{count}</span>}
-                          </button>
-                        );
-                      })}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[10px] text-[var(--text-muted)]">
+                        <span>Voti espressi: {totalVoted} / {totalVoters} ({pct}%)</span>
+                        <span className="text-emerald-400 font-bold">Approvazione richiesta: {Math.floor(totalVoters / 2) + 1} 👍</span>
+                      </div>
+                      <div className="w-full bg-[var(--surface-sub)] h-2 rounded-full overflow-hidden border border-[var(--border-subtle)]">
+                        <div className="bg-[#0084ff] h-full transition-all duration-500" style={{ width: `${Math.min(100, pct)}%` }}></div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-[var(--border-subtle)]">
+                      <div className="flex gap-1.5">
+                        <button
+                          onClick={() => votePick(p, 1)}
+                          className={`px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer flex items-center gap-1 transition ${p.votes?.[nick] === 1 ? "bg-emerald-600 text-white shadow" : "bg-[var(--surface-quote)] text-[var(--text-muted)] hover:text-white"}`}
+                        >
+                          <ThumbsUp className="w-3.5 h-3.5" /> <span>{up}</span>
+                        </button>
+                        <button
+                          onClick={() => votePick(p, -1)}
+                          className={`px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer flex items-center gap-1 transition ${p.votes?.[nick] === -1 ? "bg-rose-600 text-white shadow" : "bg-[var(--surface-quote)] text-[var(--text-muted)] hover:text-white"}`}
+                        >
+                          <ThumbsDown className="w-3.5 h-3.5" /> <span>{down}</span>
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        {["🔥", "💣", "🔒", "🤡"].map((emoji) => {
+                          const count = (p.reactions?.[emoji] || []).length;
+                          const hasReacted = (p.reactions?.[emoji] || []).includes(nick);
+                          return (
+                            <button
+                              key={emoji}
+                              onClick={() => reactPick(p, emoji)}
+                              className={`px-2 py-1 rounded border text-[11px] transition cursor-pointer ${hasReacted ? "bg-[#0084ff]/20 border-[#0084ff] text-white" : "bg-[var(--surface-quote)] border-[var(--border-subtle)] text-[var(--text-muted)]"}`}
+                            >
+                              {emoji} {count > 0 && <span className="font-mono font-bold ml-0.5">{count}</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 );
@@ -1240,18 +1272,46 @@ export default function RoomPage() {
           </div>
         )}
 
-        {/* Tab 3: Schedina Squad */}
+        {activeTab === "storico" && (
+          <div className="max-w-4xl mx-auto space-y-2">
+            <div className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider mb-2">📜 Storico Proposte e Voti Conclusi</div>
+            {historyPicks.length === 0 ? (
+              <div className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-8 text-center text-xs text-[var(--text-muted)]">
+                Nessuno storico disponibile in questa sessione.
+              </div>
+            ) : (
+              historyPicks.map((item) => (
+                <div key={item.id} className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-3 flex items-center justify-between text-xs">
+                  <div className="space-y-0.5 truncate pr-2">
+                    <div className="font-bold truncate text-white">{item.match_label}</div>
+                    <div className="text-[11px] text-[var(--text-muted)]">
+                      {item.selection} ({item.market}) • Proposto da <span className="text-[#0084ff] font-semibold">{item.proposed_by}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="font-mono font-bold text-amber-400">@{Number(item.odds).toFixed(2)}</span>
+                    {item.status === "confirmed" ? (
+                      <span className="bg-emerald-500/15 text-emerald-400 text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" /> Approvata
+                      </span>
+                    ) : (
+                      <span className="bg-rose-500/15 text-rose-400 text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1">
+                        <XCircle className="w-3 h-3" /> Bocciata
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
         {activeTab === "schedina" && (
           <div className="max-w-4xl mx-auto bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-3 sm:p-5 shadow-sm space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-[var(--border-subtle)]">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold uppercase tracking-wider">Schedina Squad ({confirmed.length} eventi)</span>
-                <button
-                  onClick={() => setShowRulesModal(true)}
-                  className="text-[10px] text-[#0084ff] underline cursor-pointer"
-                >
-                  Regolamento ADM
-                </button>
+                <button onClick={() => setShowRulesModal(true)} className="text-[10px] text-[#0084ff] underline cursor-pointer">Regolamento ADM</button>
               </div>
               <div className="flex items-center gap-1 bg-[var(--bg-main)] p-1 rounded border border-[var(--border-subtle)]">
                 <span className="text-[10px] text-[var(--text-muted)]">Puntata:</span>
@@ -1259,9 +1319,7 @@ export default function RoomPage() {
                   <button
                     key={val}
                     onClick={() => setStake(val)}
-                    className={`px-2 py-0.5 rounded text-xs font-bold cursor-pointer ${
-                      stake === val ? "bg-[#0084ff] text-white" : "text-[var(--text-muted)]"
-                    }`}
+                    className={`px-2 py-0.5 rounded text-xs font-bold cursor-pointer ${stake === val ? "bg-[#0084ff] text-white" : "text-[var(--text-muted)]"}`}
                   >
                     {val}€
                   </button>
@@ -1271,7 +1329,7 @@ export default function RoomPage() {
 
             {confirmed.length === 0 ? (
               <div className="text-center py-10 text-xs text-[var(--text-muted)]">
-                Nessuna giocata in schedina. Seleziona le quote nel palinsesto.
+                Nessuna giocata in schedina. Approva i pronostici nel tab Votazioni o seleziona quote in modalità Libera.
               </div>
             ) : (
               <div className="space-y-4">
@@ -1279,12 +1337,12 @@ export default function RoomPage() {
                   {confirmed.map((c) => (
                     <div key={c.id} className="py-2.5 flex items-center justify-between text-xs">
                       <div className="pr-2 truncate">
-                        <div className="font-bold truncate">{c.match_label}</div>
+                        <div className="font-bold truncate text-white">{c.match_label}</div>
                         <div className="text-[11px] text-[#0084ff] font-semibold">{c.selection} ({c.market})</div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className="font-mono font-bold text-[var(--quote-val)] text-sm">@{Number(c.odds).toFixed(2)}</span>
-                        <button onClick={() => removePick(c.id)} className="text-rose-500 px-1 text-sm cursor-pointer">✕</button>
+                        <span className="font-mono font-bold text-amber-400 text-sm">@{Number(c.odds).toFixed(2)}</span>
+                        <button onClick={() => removePick(c.id)} className="text-rose-500 px-1 text-sm cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>
                       </div>
                     </div>
                   ))}
@@ -1306,48 +1364,67 @@ export default function RoomPage() {
                     <div>
                       <span className="font-bold uppercase text-xs block">Potenziale Vincita ({stake}€):</span>
                     </div>
-                    <span className="text-2xl font-mono font-black text-emerald-500">{potentialWin} €</span>
+                    <span className="text-2xl font-mono font-black text-emerald-400">{potentialWin} €</span>
                   </div>
 
                   {isCapped && (
                     <div className="bg-amber-500/15 border border-amber-500/30 text-amber-400 p-2.5 rounded-lg text-xs leading-relaxed font-semibold flex items-center gap-2">
-                      <span className="text-base">⚠️</span>
+                      <ShieldAlert className="w-4 h-4 shrink-0" />
                       <span>La vincita potenziale è superiore al limite consentito (€ 50.000). Modifica il pronostico o la puntata.</span>
                     </div>
                   )}
 
-                  {/* Comparatore Bookmaker */}
-                  <div className="mt-3 pt-3 border-t border-[var(--border-subtle)]">
-                    <span className="text-[11px] font-bold text-[var(--text-muted)] uppercase block mb-2">
-                      Confronto Payout Bookmaker ADM ({stake}€):
-                    </span>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      {bookmakers.map((b) => (
-                        <a
+                  <div className="mt-4 pt-3 border-t border-[var(--border-subtle)] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-[var(--text-muted)] uppercase flex items-center gap-1">
+                        <Trophy className="w-3.5 h-3.5 text-amber-400" /> Confronto Payout Bookmaker ADM ({stake}€):
+                      </span>
+                      <span className="text-[10px] text-[var(--text-muted)]">Ordinati dal migliore</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {evaluatedBookmakers.map((b, idx) => (
+                        <div
                           key={b.name}
-                          href={b.link}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="bg-[var(--surface-sub)] hover:bg-[var(--surface-quote)] transition-all p-3 rounded-lg border border-[var(--border-subtle)] hover:border-[#0084ff] flex sm:flex-col justify-between items-center sm:items-start gap-1 cursor-pointer block group"
+                          className={`p-3 rounded-lg border transition flex flex-col justify-between gap-2 ${idx === 0 && b.supportsAll ? "bg-amber-500/10 border-amber-500/40 shadow-sm" : "bg-[var(--surface-sub)] border-[var(--border-subtle)]"}`}
                         >
-                          <div>
-                            <span className="font-bold text-xs text-white block group-hover:text-[#0084ff] transition">{b.name}</span>
-                            <span className="text-[10px] text-[var(--text-muted)]">Bonus applicato</span>
-                          </div>
-                          <div className="flex items-center sm:w-full sm:justify-between gap-2 mt-1">
-                            <span className="text-sm font-mono font-bold text-emerald-500">
-                              {(Math.min(50000, Number(potentialWin) * b.bonus)).toFixed(2)} €
-                            </span>
-                            <span className="text-[10px] bg-[#0084ff] group-hover:bg-[#0073e6] text-white px-2 py-0.5 rounded font-bold uppercase transition">
-                              Apri ↗
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-xs text-white flex items-center gap-1.5">
+                              <span>{b.logo}</span> {b.name}
+                              {idx === 0 && b.supportsAll && (
+                                <span className="bg-amber-400 text-black text-[9px] font-black px-1.5 py-0.2 rounded uppercase">Miglior Quota 🏆</span>
+                              )}
                             </span>
                           </div>
-                        </a>
+
+                          <div className="flex items-center justify-between pt-1">
+                            {b.supportsAll ? (
+                              <div className="flex flex-col">
+                                <span className="text-sm font-mono font-bold text-emerald-400">
+                                  {b.finalPayout} €
+                                </span>
+                                <span className="text-[10px] text-[var(--text-muted)]">Bonus incluso</span>
+                              </div>
+                            ) : (
+                              <span className="text-[10px] text-rose-400 font-semibold flex items-center gap-1">
+                                <AlertCircle className="w-3 h-3" /> Mercati parzialmente non disponibili
+                              </span>
+                            )}
+
+                            <a
+                              href={b.link}
+                              target="_blank"
+                              rel="noreferrer"
+                              className={`h-7 px-3 rounded text-[10px] font-bold uppercase transition flex items-center gap-1 ${b.supportsAll ? "bg-[#0084ff] hover:bg-[#0073e6] text-white" : "bg-[var(--surface-quote)] text-[var(--text-muted)] hover:text-white"}`}
+                            >
+                              <span>Apri</span> <ExternalLink className="w-3 h-3" />
+                            </a>
+                          </div>
+                        </div>
                       ))}
                     </div>
                   </div>
 
-                  {/* Divisione Spesa a Testa da 1 a 20 */}
                   <div className="mt-3 pt-3 border-t border-[var(--border-subtle)] bg-[var(--surface-sub)] p-3 rounded-lg">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-[11px] font-bold text-[var(--text-muted)] uppercase">Partecipanti alla spesa:</span>
@@ -1366,11 +1443,11 @@ export default function RoomPage() {
                     <div className="grid grid-cols-2 gap-2 text-center pt-1">
                       <div className="bg-[var(--surface-card)] p-2 rounded border border-[var(--border-subtle)]">
                         <span className="block text-[10px] text-[var(--text-muted)] uppercase">Quota a testa</span>
-                        <span className="text-xs font-mono font-bold text-amber-500">{stakePerHead} €</span>
+                        <span className="text-xs font-mono font-bold text-amber-400">{stakePerHead} €</span>
                       </div>
                       <div className="bg-[var(--surface-card)] p-2 rounded border border-[var(--border-subtle)]">
                         <span className="block text-[10px] text-[var(--text-muted)] uppercase">Vincita a testa</span>
-                        <span className="text-xs font-mono font-bold text-emerald-500">{winPerHead} €</span>
+                        <span className="text-xs font-mono font-bold text-emerald-400">{winPerHead} €</span>
                       </div>
                     </div>
                   </div>
@@ -1381,13 +1458,10 @@ export default function RoomPage() {
         )}
       </main>
 
-      {/* Widget NovaJackpot */}
       {activeTab !== "schedina" && (
         <div className="fixed bottom-3 right-3 sm:right-6 z-40 flex flex-col items-end pointer-events-none">
           {isSheetOpen && (
-            <div
-              className="w-[calc(100vw-24px)] max-w-[340px] sm:max-w-[380px] bg-[var(--surface-card)] border border-[var(--border-strong)] rounded-xl shadow-2xl p-3.5 mb-2 pointer-events-auto max-h-[65vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200"
-            >
+            <div className="w-[calc(100vw-24px)] max-w-[340px] sm:max-w-[380px] bg-[var(--surface-card)] border border-[var(--border-strong)] rounded-xl shadow-2xl p-3.5 mb-2 pointer-events-auto max-h-[65vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
               <div className="flex items-center justify-between pb-2 border-b border-[var(--border-subtle)]">
                 <span className="text-xs font-bold uppercase tracking-wider">
                   {betMode === "voto" ? `Voti & Proposte (${picks.length})` : `Schedina Rapida (${confirmed.length})`}
@@ -1410,11 +1484,11 @@ export default function RoomPage() {
                   {(betMode === "voto" ? picks : confirmed).map((c) => (
                     <div key={c.id} className="py-1.5 flex items-center justify-between text-xs">
                       <div className="pr-2 truncate">
-                        <div className="font-bold truncate">{c.match_label}</div>
+                        <div className="font-bold truncate text-white">{c.match_label}</div>
                         <div className="text-[10px] text-[#0084ff] font-semibold">{c.selection}</div>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
-                        <span className="font-mono font-bold text-[var(--quote-val)] text-xs">@{Number(c.odds).toFixed(2)}</span>
+                        <span className="font-mono font-bold text-amber-400 text-xs">@{Number(c.odds).toFixed(2)}</span>
                         <button type="button" onClick={() => removePick(c.id)} className="text-rose-500 text-xs px-1 cursor-pointer">✕</button>
                       </div>
                     </div>
@@ -1425,28 +1499,19 @@ export default function RoomPage() {
                       <span className="text-[var(--text-muted)]">Quota: @{totalOdds}</span>
                       <span className="text-[var(--text-muted)]">Puntata: {stake}€</span>
                     </div>
-                    <div className="flex justify-between items-baseline pt-1 text-emerald-500 font-mono font-black text-base">
+                    <div className="flex justify-between items-baseline pt-1 text-emerald-400 font-mono font-black text-base">
                       <span className="text-xs uppercase font-bold text-[var(--text-muted)]">Vincita:</span>
                       <span>{potentialWin} €</span>
                     </div>
 
-                    {isCapped && (
-                      <div className="bg-amber-500/15 border border-amber-500/30 text-amber-400 p-1.5 rounded text-[10px] leading-tight font-semibold">
-                        ⚠️ Vincita superiore a € 50.000. Modifica puntata o pronostico.
-                      </div>
-                    )}
-
                     <div className="pt-2">
                       <button
                         type="button"
-                        onClick={() => {
-                          setIsSheetOpen(false);
-                          setActiveTab(betMode === "voto" ? "voti" : "schedina");
-                        }}
+                        onClick={() => { setIsSheetOpen(false); setActiveTab(betMode === "voto" ? "voti" : "schedina"); }}
                         className="w-full h-10 bg-[#0084ff] hover:bg-[#0073e6] active:bg-[#0060c0] text-white text-xs font-bold uppercase tracking-wider rounded-lg flex items-center justify-center gap-1 cursor-pointer shadow-md transition"
                       >
                         <span>{betMode === "voto" ? "Vai a Votazioni" : "Vai a Schedina Squad"}</span>
-                        <span>➔</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
@@ -1455,7 +1520,6 @@ export default function RoomPage() {
             </div>
           )}
 
-          {/* Pulsante Floating */}
           <button
             type="button"
             onClick={() => setIsSheetOpen((prev) => !prev)}

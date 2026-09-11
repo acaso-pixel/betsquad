@@ -17,8 +17,9 @@ export default function RoomPage() {
   const [matches, setMatches] = useState<any[]>([]);
   const [picks, setPicks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"palinsesto" | "voti" | "schedina" | "comparatore">("palinsesto");
-  const [marketFilter, setMarketFilter] = useState<"1X2" | "UO" | "COMBO">("1X2");
+  const [activeTab, setActiveTab] = useState<"palinsesto" | "voti" | "schedina">("palinsesto");
+  const [selectedLeague, setSelectedLeague] = useState<string>("Serie A TIM");
+  const [marketFilter, setMarketFilter] = useState<"1X2" | "DC" | "UO" | "GG" | "MG">("1X2");
   const [stake, setStake] = useState<number>(10);
   const [participantsCount, setParticipantsCount] = useState<number>(4);
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
@@ -190,9 +191,13 @@ export default function RoomPage() {
     } catch {}
   };
 
+  const filteredMatches = useMemo(() => {
+    return matches.filter((m) => m.league === selectedLeague);
+  }, [matches, selectedLeague]);
+
   const groupedMatches = useMemo(() => {
     const groups: { [key: string]: any[] } = {};
-    const sorted = [...matches].sort((a, b) => new Date(a.commence_time).getTime() - new Date(b.commence_time).getTime());
+    const sorted = [...filteredMatches].sort((a, b) => new Date(a.commence_time).getTime() - new Date(b.commence_time).getTime());
 
     sorted.forEach((m) => {
       const d = new Date(m.commence_time);
@@ -207,7 +212,7 @@ export default function RoomPage() {
     });
 
     return groups;
-  }, [matches]);
+  }, [filteredMatches]);
 
   const handlePickAction = async (match: any, market: string, selection: string, odds: number) => {
     const existing = picks.find((p) => p.match_id === match.id);
@@ -331,7 +336,7 @@ export default function RoomPage() {
       `⚙️ Regole: ${betMode === "libera" ? "Libera" : "A Voto"}\n` +
       `👥 Partecipanti: ${safeParticipants} (${stakePerHead}€ a testa)\n` +
       `📌 Pronostici (${confirmed.length}):\n` +
-      confirmed.map((c) => `• ${c.match_label}: ${c.selection} @${Number(c.odds).toFixed(2)}`).join("\n") +
+      confirmed.map((c) => `• ${c.match_label}: ${c.selection} [${c.market}] @${Number(c.odds).toFixed(2)}`).join("\n") +
       `\n\n💰 Quota Totale: @${totalOdds}` +
       (bonusPct > 0 ? `\n🎁 Bonus Multipla: +${bonusPct}%` : "") +
       `\n💵 Puntata: ${stake}€ (Vincita a testa: ${winPerHead}€)` +
@@ -425,7 +430,7 @@ export default function RoomPage() {
 
         ctx.fillStyle = "#0084ff";
         ctx.font = "bold 32px sans-serif";
-        ctx.fillText(`Pronostico: ${c.selection}`, 120, yPos + 44);
+        ctx.fillText(`Pronostico: ${c.selection} (${c.market})`, 120, yPos + 44);
 
         ctx.textAlign = "right";
         ctx.fillStyle = "#f59e0b";
@@ -478,11 +483,19 @@ export default function RoomPage() {
     { name: "GoldBet", bonus: 1.03, link: "https://www.goldbet.it" },
   ];
 
+  const competitions = [
+    { name: "Serie A TIM", flag: "🇮🇹", region: "Italia" },
+    { name: "Premier League", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿", region: "Inghilterra" },
+    { name: "LaLiga", flag: "🇪🇸", region: "Spagna" },
+    { name: "Bundesliga", flag: "🇩🇪", region: "Germania" },
+    { name: "Champions League", flag: "🇪🇺", region: "Europa" }
+  ];
+
   return (
     <div className="min-h-screen bg-[var(--bg-main)] text-[var(--text-main)] pb-24 font-sans antialiased select-none">
       <canvas ref={canvasRef} className="hidden" />
 
-      {/* Toast Notifica SPOSTATO IN BASSO A TOP-20 PER NON COPRIRE GLI INPUT */}
+      {/* Toast Notifica riposizionato per non coprire nulla */}
       {toast && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-[#0084ff] text-white text-[11px] font-bold px-4 py-2 rounded-full shadow-2xl border border-white/20">
           {toast}
@@ -496,7 +509,6 @@ export default function RoomPage() {
           <span className="font-extrabold text-sm tracking-tight hidden sm:inline">SQUAD</span>
         </div>
 
-        {/* Input nome sessione e nickname */}
         <div className="flex-1 max-w-sm mx-1 flex items-center justify-center gap-1.5">
           <input
             type="text"
@@ -518,7 +530,6 @@ export default function RoomPage() {
           />
         </div>
 
-        {/* Tasti header ingranditi */}
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={exportStoryCard}
@@ -543,7 +554,7 @@ export default function RoomPage() {
         </div>
       </header>
 
-      {/* Barra Presenze Online & Switch Libera/Voto PIÙ GRANDE */}
+      {/* Barra Presenze & Switch Modalità */}
       <div className="bg-[var(--surface-card)] border-b border-[var(--border-subtle)] px-3 py-2 flex items-center justify-between text-xs">
         <div className="flex items-center gap-2 truncate pr-2">
           <span className="text-[var(--text-muted)] font-mono text-xs">{roomId}</span>
@@ -555,7 +566,6 @@ export default function RoomPage() {
           )}
         </div>
 
-        {/* Switch Libera / A Voto maggiorato */}
         {isHost ? (
           <div className="flex items-center gap-1 bg-[var(--bg-main)] p-1 rounded-md border border-[var(--border-subtle)] shrink-0">
             <button
@@ -584,11 +594,11 @@ export default function RoomPage() {
         )}
       </div>
 
-      {/* Tabs */}
+      {/* Tabs Principali */}
       <div className="bg-[var(--surface-header)] border-b border-[var(--border-subtle)] px-2 flex text-xs font-bold uppercase tracking-wider overflow-x-auto no-scrollbar">
         <button
           onClick={() => setActiveTab("palinsesto")}
-          className={`py-2 px-3 transition whitespace-nowrap border-b-2 cursor-pointer ${
+          className={`py-2 px-4 transition whitespace-nowrap border-b-2 cursor-pointer ${
             activeTab === "palinsesto" ? "text-[#0084ff] border-[#0084ff]" : "text-[var(--text-muted)] border-transparent"
           }`}
         >
@@ -596,7 +606,7 @@ export default function RoomPage() {
         </button>
         <button
           onClick={() => setActiveTab("voti")}
-          className={`py-2 px-3 flex items-center gap-1 whitespace-nowrap border-b-2 cursor-pointer ${
+          className={`py-2 px-4 flex items-center gap-1.5 whitespace-nowrap border-b-2 cursor-pointer ${
             activeTab === "voti" ? "text-[#0084ff] border-[#0084ff]" : "text-[var(--text-muted)] border-transparent"
           }`}
         >
@@ -609,7 +619,7 @@ export default function RoomPage() {
         </button>
         <button
           onClick={() => setActiveTab("schedina")}
-          className={`py-2 px-3 flex items-center gap-1 whitespace-nowrap border-b-2 cursor-pointer ${
+          className={`py-2 px-4 flex items-center gap-1.5 whitespace-nowrap border-b-2 cursor-pointer ${
             activeTab === "schedina" ? "text-[#0084ff] border-[#0084ff]" : "text-[var(--text-muted)] border-transparent"
           }`}
         >
@@ -618,159 +628,250 @@ export default function RoomPage() {
             {confirmed.length}
           </span>
         </button>
-        <button
-          onClick={() => setActiveTab("comparatore")}
-          className={`py-2 px-3 whitespace-nowrap border-b-2 cursor-pointer ${
-            activeTab === "comparatore" ? "text-[#0084ff] border-[#0084ff]" : "text-[var(--text-muted)] border-transparent"
-          }`}
-        >
-          Comparatore Bookmaker
-        </button>
       </div>
 
-      <main className="p-2 sm:p-4 max-w-4xl mx-auto">
-        {/* Tab 1: Palinsesto */}
+      {/* SELETTORE COMPETIZIONI A SCORRIMENTO ORIZZONTALE PER MOBILE */}
+      {activeTab === "palinsesto" && (
+        <div className="md:hidden bg-[var(--surface-card)] border-b border-[var(--border-subtle)] px-2.5 py-2 overflow-x-auto flex gap-1.5 no-scrollbar">
+          {competitions.map((comp) => (
+            <button
+              key={comp.name}
+              onClick={() => setSelectedLeague(comp.name)}
+              className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap flex items-center gap-1.5 border transition cursor-pointer ${
+                selectedLeague === comp.name
+                  ? "bg-[#0084ff] border-[#0084ff] text-white shadow-sm"
+                  : "bg-[var(--surface-quote)] border-[var(--border-subtle)] text-[var(--text-muted)]"
+              }`}
+            >
+              <span>{comp.flag}</span>
+              <span>{comp.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <main className="p-2 sm:p-4 max-w-6xl mx-auto">
+        {/* Tab 1: Palinsesto Quote */}
         {activeTab === "palinsesto" && (
-          <div>
-            <div className="flex items-center justify-between pb-2">
-              <div className="text-[11px] font-bold text-[var(--text-muted)]">🇮🇹 Serie A TIM</div>
-              <div className="flex bg-[var(--surface-card)] p-0.5 rounded border border-[var(--border-subtle)] text-[10px] font-bold">
-                {(["1X2", "UO", "COMBO"] as const).map((m) => (
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+            {/* SIDEBAR DESKTOP ALTRE COMPETIZIONI */}
+            <aside className="hidden md:block md:col-span-3 bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-3 h-fit">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)] pb-2 mb-2 border-b border-[var(--border-subtle)] flex items-center justify-between">
+                <span>Altre Competizioni</span>
+                <span className="text-[10px] text-[#0084ff] font-bold">CALCIO</span>
+              </div>
+              <div className="space-y-1.5">
+                {competitions.map((comp) => (
                   <button
-                    key={m}
-                    onClick={() => setMarketFilter(m)}
-                    className={`px-2 py-0.5 rounded cursor-pointer ${
-                      marketFilter === m ? "bg-[#0084ff] text-white" : "text-[var(--text-muted)]"
+                    key={comp.name}
+                    onClick={() => setSelectedLeague(comp.name)}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-md text-xs font-bold transition cursor-pointer ${
+                      selectedLeague === comp.name
+                        ? "bg-[#0084ff] text-white shadow-sm"
+                        : "bg-[var(--surface-quote)] hover:bg-[var(--surface-quote-hover)] text-[var(--text-main)]"
                     }`}
                   >
-                    {m}
+                    <span className="flex items-center gap-2">
+                      <span>{comp.flag}</span>
+                      <span>{comp.name}</span>
+                    </span>
+                    <span className="text-[10px] opacity-75 font-mono">➔</span>
                   </button>
                 ))}
               </div>
-            </div>
+            </aside>
 
-            {loading ? (
-              <div className="text-center py-12 text-xs text-[var(--text-muted)]">Caricamento quote...</div>
-            ) : Object.keys(groupedMatches).length === 0 ? (
-              <div className="text-center py-12 text-xs text-[var(--text-muted)]">Nessuna partita programmata.</div>
-            ) : (
-              <div className="space-y-3">
-                {Object.entries(groupedMatches).map(([dateLabel, matchList]) => (
-                  <div key={dateLabel} className="bg-[var(--surface-header)] border border-[var(--border-subtle)] rounded-lg overflow-hidden shadow-sm">
-                    <div className="bg-[var(--surface-sub)] px-3 py-1 text-[11px] font-bold flex items-center justify-between border-b border-[var(--border-subtle)]">
-                      <span>📅 {dateLabel}</span>
-                      <span className="text-[9px] text-[var(--text-muted)] font-mono uppercase">
-                        {marketFilter === "1X2" ? "1 • X • 2" : marketFilter === "UO" ? "Over • Under" : "Combo"}
-                      </span>
-                    </div>
+            {/* TABELLA PALINSESTO */}
+            <div className="md:col-span-9 space-y-3">
+              {/* Barra Mercati Scommesse Ingrandita */}
+              <div className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shadow-sm">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">{competitions.find(c => c.name === selectedLeague)?.flag}</span>
+                  <span className="text-xs font-bold uppercase text-white tracking-wide">{selectedLeague}</span>
+                </div>
 
-                    <div className="divide-y divide-[var(--border-subtle)]">
-                      {matchList.map((m) => {
-                        const timeStr = new Date(m.commence_time).toLocaleTimeString("it-IT", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        });
-
-                        return (
-                          <div key={m.id} className="p-2.5 flex items-center justify-between gap-2">
-                            <div className="min-w-0 flex-1 pr-1">
-                              <span className="text-[10px] font-mono text-[var(--text-muted)] block mb-0.5">{timeStr}</span>
-                              <div className="text-xs font-bold leading-tight truncate">{m.home}</div>
-                              <div className="text-xs font-bold leading-tight truncate">{m.away}</div>
-                            </div>
-
-                            <div className="grid grid-cols-3 gap-1 shrink-0 w-[160px] sm:w-[200px]">
-                              {marketFilter === "1X2" && (
-                                <>
-                                  {(["1", "X", "2"] as const).map((lbl) => {
-                                    const val = Number(m.odds1X2?.[lbl] || 2.0);
-                                    const selected = isSelected(m.id, lbl);
-                                    return (
-                                      <button
-                                        key={lbl}
-                                        onClick={() => handlePickAction(m, "1X2", lbl, val)}
-                                        className={`h-9 flex flex-col items-center justify-center rounded transition border cursor-pointer ${
-                                          selected
-                                            ? "bg-[#0084ff] border-white text-white shadow-sm font-black"
-                                            : "bg-[var(--surface-quote)] active:bg-[var(--surface-quote-hover)] border-[var(--border-subtle)] text-[var(--quote-val)]"
-                                        }`}
-                                      >
-                                        <span className="text-[9px] text-[var(--text-muted)] leading-none -mt-0.5">{lbl}</span>
-                                        <span className="text-xs font-bold font-mono tabular-nums leading-tight">
-                                          {val.toFixed(2)}
-                                        </span>
-                                      </button>
-                                    );
-                                  })}
-                                </>
-                              )}
-
-                              {marketFilter === "UO" && (
-                                <>
-                                  <button
-                                    onClick={() => handlePickAction(m, "U/O", "Over 2.5", Number(m.derived?.uo?.["Over 2.5"] || 1.85))}
-                                    className={`h-9 flex flex-col items-center justify-center rounded transition border cursor-pointer ${
-                                      isSelected(m.id, "Over 2.5")
-                                        ? "bg-[#0084ff] border-white text-white shadow-sm font-black"
-                                        : "bg-[var(--surface-quote)] active:bg-[var(--surface-quote-hover)] border-[var(--border-subtle)] text-[var(--quote-val)]"
-                                    }`}
-                                  >
-                                    <span className="text-[8px] text-[var(--text-muted)] leading-none">O 2.5</span>
-                                    <span className="text-xs font-bold font-mono tabular-nums leading-tight">
-                                      {m.derived?.uo?.["Over 2.5"]?.toFixed(2) || "1.85"}
-                                    </span>
-                                  </button>
-                                  <div className="h-9 flex items-center justify-center text-[var(--text-muted)] text-[10px]">-</div>
-                                  <button
-                                    onClick={() => handlePickAction(m, "U/O", "Under 2.5", Number(m.derived?.uo?.["Under 2.5"] || 1.95))}
-                                    className={`h-9 flex flex-col items-center justify-center rounded transition border cursor-pointer ${
-                                      isSelected(m.id, "Under 2.5")
-                                        ? "bg-[#0084ff] border-white text-white shadow-sm font-black"
-                                        : "bg-[var(--surface-quote)] active:bg-[var(--surface-quote-hover)] border-[var(--border-subtle)] text-[var(--quote-val)]"
-                                    }`}
-                                  >
-                                    <span className="text-[8px] text-[var(--text-muted)] leading-none">U 2.5</span>
-                                    <span className="text-xs font-bold font-mono tabular-nums leading-tight">
-                                      {m.derived?.uo?.["Under 2.5"]?.toFixed(2) || "1.95"}
-                                    </span>
-                                  </button>
-                                </>
-                              )}
-
-                              {marketFilter === "COMBO" && (
-                                <>
-                                  {(["1 + Over 2.5", "X + Under 2.5", "2 + Over 2.5"] as const).map((cKey, idx) => {
-                                    const cVal = Number(m.derived?.combo?.[cKey] || 3.5);
-                                    const selected = isSelected(m.id, cKey);
-                                    const shortLbl = idx === 0 ? "1+Ov" : idx === 1 ? "X+Un" : "2+Ov";
-                                    return (
-                                      <button
-                                        key={cKey}
-                                        onClick={() => handlePickAction(m, "Combo", cKey, cVal)}
-                                        className={`h-9 flex flex-col items-center justify-center rounded transition border cursor-pointer ${
-                                          selected
-                                            ? "bg-[#0084ff] border-white text-white shadow-sm font-black"
-                                            : "bg-[var(--surface-quote)] active:bg-[var(--surface-quote-hover)] border-[var(--border-subtle)] text-[var(--quote-val)]"
-                                        }`}
-                                      >
-                                        <span className="text-[8px] text-[var(--text-muted)] leading-none">{shortLbl}</span>
-                                        <span className="text-xs font-bold font-mono tabular-nums leading-tight">
-                                          {cVal.toFixed(2)}
-                                        </span>
-                                      </button>
-                                    );
-                                  })}
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
+                <div className="flex flex-wrap items-center gap-1.5 bg-[var(--bg-main)] p-1 rounded-lg border border-[var(--border-subtle)] w-full sm:w-auto overflow-x-auto">
+                  {[
+                    { id: "1X2", label: "Esito Finale 1x2" },
+                    { id: "DC", label: "Doppia Chance" },
+                    { id: "UO", label: "Under/Over" },
+                    { id: "GG", label: "Goal/NoGoal" },
+                    { id: "MG", label: "Multigoal" }
+                  ].map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => setMarketFilter(m.id as any)}
+                      className={`px-3 py-1.5 rounded-md text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+                        marketFilter === m.id
+                          ? "bg-[#0084ff] text-white shadow-sm"
+                          : "text-[var(--text-muted)] hover:text-white"
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-            )}
+
+              {loading ? (
+                <div className="text-center py-12 text-xs text-[var(--text-muted)] bg-[var(--surface-card)] rounded-lg border border-[var(--border-subtle)]">
+                  Caricamento quote in corso...
+                </div>
+              ) : Object.keys(groupedMatches).length === 0 ? (
+                <div className="text-center py-12 text-xs text-[var(--text-muted)] bg-[var(--surface-card)] rounded-lg border border-[var(--border-subtle)]">
+                  Nessun match in programma per {selectedLeague}.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {Object.entries(groupedMatches).map(([dateLabel, matchList]) => (
+                    <div key={dateLabel} className="bg-[var(--surface-header)] border border-[var(--border-subtle)] rounded-lg overflow-hidden shadow-sm">
+                      <div className="bg-[var(--surface-sub)] px-3 py-1.5 text-xs font-bold flex items-center justify-between border-b border-[var(--border-subtle)]">
+                        <span>📅 {dateLabel}</span>
+                        <span className="text-[10px] text-[var(--text-muted)] uppercase">
+                          {marketFilter === "1X2" ? "1 • X • 2" : marketFilter === "DC" ? "1X • 12 • X2" : marketFilter === "UO" ? "Over 2.5 • Under 2.5" : marketFilter === "GG" ? "Goal • NoGoal" : "1-3 • 2-4 • 2-5"}
+                        </span>
+                      </div>
+
+                      <div className="divide-y divide-[var(--border-subtle)]">
+                        {matchList.map((m) => {
+                          const timeStr = new Date(m.commence_time).toLocaleTimeString("it-IT", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          });
+
+                          return (
+                            <div key={m.id} className="p-3 flex items-center justify-between gap-2">
+                              <div className="min-w-0 flex-1 pr-2">
+                                <span className="text-[10px] font-mono text-[var(--text-muted)] block mb-0.5">{timeStr}</span>
+                                <div className="text-xs font-bold truncate">{m.home}</div>
+                                <div className="text-xs font-bold truncate">{m.away}</div>
+                              </div>
+
+                              <div className="shrink-0">
+                                {marketFilter === "1X2" && (
+                                  <div className="grid grid-cols-3 gap-1.5 w-[190px] sm:w-[220px]">
+                                    {(["1", "X", "2"] as const).map((lbl) => {
+                                      const val = Number(m.odds1X2?.[lbl] || 2.0);
+                                      const selected = isSelected(m.id, lbl);
+                                      return (
+                                        <button
+                                          key={lbl}
+                                          onClick={() => handlePickAction(m, "1X2", lbl, val)}
+                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer ${
+                                            selected
+                                              ? "bg-[#0084ff] border-white text-white shadow-sm font-black"
+                                              : "bg-[var(--surface-quote)] active:bg-[var(--surface-quote-hover)] border-[var(--border-subtle)] text-[var(--quote-val)]"
+                                          }`}
+                                        >
+                                          <span className="text-[9px] text-[var(--text-muted)] leading-none">{lbl}</span>
+                                          <span className="text-xs font-bold font-mono tabular-nums leading-tight">{val.toFixed(2)}</span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+
+                                {marketFilter === "DC" && (
+                                  <div className="grid grid-cols-3 gap-1.5 w-[190px] sm:w-[220px]">
+                                    {(["1X", "12", "X2"] as const).map((lbl) => {
+                                      const val = Number(m.oddsDC?.[lbl] || 1.35);
+                                      const selected = isSelected(m.id, lbl);
+                                      return (
+                                        <button
+                                          key={lbl}
+                                          onClick={() => handlePickAction(m, "Doppia Chance", lbl, val)}
+                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer ${
+                                            selected
+                                              ? "bg-[#0084ff] border-white text-white shadow-sm font-black"
+                                              : "bg-[var(--surface-quote)] active:bg-[var(--surface-quote-hover)] border-[var(--border-subtle)] text-[var(--quote-val)]"
+                                          }`}
+                                        >
+                                          <span className="text-[9px] text-[var(--text-muted)] leading-none">{lbl}</span>
+                                          <span className="text-xs font-bold font-mono tabular-nums leading-tight">{val.toFixed(2)}</span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+
+                                {marketFilter === "UO" && (
+                                  <div className="grid grid-cols-2 gap-1.5 w-[170px] sm:w-[200px]">
+                                    {(["Over 2.5", "Under 2.5"] as const).map((lbl) => {
+                                      const val = Number(m.oddsUO?.[lbl] || 1.85);
+                                      const selected = isSelected(m.id, lbl);
+                                      return (
+                                        <button
+                                          key={lbl}
+                                          onClick={() => handlePickAction(m, "Under/Over", lbl, val)}
+                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer ${
+                                            selected
+                                              ? "bg-[#0084ff] border-white text-white shadow-sm font-black"
+                                              : "bg-[var(--surface-quote)] active:bg-[var(--surface-quote-hover)] border-[var(--border-subtle)] text-[var(--quote-val)]"
+                                          }`}
+                                        >
+                                          <span className="text-[9px] text-[var(--text-muted)] leading-none">{lbl}</span>
+                                          <span className="text-xs font-bold font-mono tabular-nums leading-tight">{val.toFixed(2)}</span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+
+                                {marketFilter === "GG" && (
+                                  <div className="grid grid-cols-2 gap-1.5 w-[170px] sm:w-[200px]">
+                                    {(["Goal", "NoGoal"] as const).map((lbl) => {
+                                      const val = Number(m.oddsGG?.[lbl] || 1.8);
+                                      const selected = isSelected(m.id, lbl);
+                                      return (
+                                        <button
+                                          key={lbl}
+                                          onClick={() => handlePickAction(m, "Goal/NoGoal", lbl, val)}
+                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer ${
+                                            selected
+                                              ? "bg-[#0084ff] border-white text-white shadow-sm font-black"
+                                              : "bg-[var(--surface-quote)] active:bg-[var(--surface-quote-hover)] border-[var(--border-subtle)] text-[var(--quote-val)]"
+                                          }`}
+                                        >
+                                          <span className="text-[9px] text-[var(--text-muted)] leading-none">{lbl}</span>
+                                          <span className="text-xs font-bold font-mono tabular-nums leading-tight">{val.toFixed(2)}</span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+
+                                {marketFilter === "MG" && (
+                                  <div className="grid grid-cols-3 gap-1.5 w-[190px] sm:w-[220px]">
+                                    {(["1-3 Goal", "2-4 Goal", "2-5 Goal"] as const).map((lbl) => {
+                                      const val = Number(m.oddsMG?.[lbl] || 1.45);
+                                      const selected = isSelected(m.id, lbl);
+                                      return (
+                                        <button
+                                          key={lbl}
+                                          onClick={() => handlePickAction(m, "Multigoal", lbl, val)}
+                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer ${
+                                            selected
+                                              ? "bg-[#0084ff] border-white text-white shadow-sm font-black"
+                                              : "bg-[var(--surface-quote)] active:bg-[var(--surface-quote-hover)] border-[var(--border-subtle)] text-[var(--quote-val)]"
+                                          }`}
+                                        >
+                                          <span className="text-[9px] text-[var(--text-muted)] leading-none">{lbl}</span>
+                                          <span className="text-xs font-bold font-mono tabular-nums leading-tight">{val.toFixed(2)}</span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -845,7 +946,7 @@ export default function RoomPage() {
           </div>
         )}
 
-        {/* Tab 3: Schedina Squad (CON COMPARATORE INTEGRATO ACCANTO/SOTTO ALLA VINCITA) */}
+        {/* Tab 3: Schedina Squad (Con Comparatore Integrato) */}
         {activeTab === "schedina" && (
           <div className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-3 sm:p-5 shadow-sm space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-[var(--border-subtle)]">
@@ -868,7 +969,7 @@ export default function RoomPage() {
 
             {confirmed.length === 0 ? (
               <div className="text-center py-10 text-xs text-[var(--text-muted)]">
-                Nessuna giocata in schedina. Tocca le quote nel palinsesto per aggiungerle.
+                Nessuna giocata in schedina. Seleziona le quote nel palinsesto.
               </div>
             ) : (
               <div className="space-y-4">
@@ -877,7 +978,7 @@ export default function RoomPage() {
                     <div key={c.id} className="py-2.5 flex items-center justify-between text-xs">
                       <div className="pr-2 truncate">
                         <div className="font-bold truncate">{c.match_label}</div>
-                        <div className="text-[11px] text-[#0084ff] font-semibold">{c.selection}</div>
+                        <div className="text-[11px] text-[#0084ff] font-semibold">{c.selection} ({c.market})</div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="font-mono font-bold text-[var(--quote-val)] text-sm">@{Number(c.odds).toFixed(2)}</span>
@@ -904,7 +1005,7 @@ export default function RoomPage() {
                     <span className="text-2xl font-mono font-black text-emerald-500">{potentialWin} €</span>
                   </div>
 
-                  {/* COMPARATORE BOOKMAKER INTEGRATO NELLA SCHEDINA SQUAD */}
+                  {/* Comparatore Bookmaker Integrato */}
                   <div className="mt-3 pt-3 border-t border-[var(--border-subtle)]">
                     <span className="text-[11px] font-bold text-[var(--text-muted)] uppercase block mb-2">
                       Confronto Payout Bookmaker ADM ({stake}€):
@@ -914,7 +1015,7 @@ export default function RoomPage() {
                         <div key={b.name} className="bg-[var(--surface-sub)] p-2.5 rounded-lg border border-[var(--border-subtle)] flex sm:flex-col justify-between items-center sm:items-start gap-1">
                           <div>
                             <span className="font-bold text-xs block">{b.name}</span>
-                            <span className="text-[10px] text-[var(--text-muted)]">Bonus incluso</span>
+                            <span className="text-[10px] text-[var(--text-muted)]">Bonus applicato</span>
                           </div>
                           <div className="flex items-center sm:w-full sm:justify-between gap-2">
                             <span className="text-sm font-mono font-bold text-emerald-500">
@@ -934,7 +1035,7 @@ export default function RoomPage() {
                     </div>
                   </div>
 
-                  {/* Divisione Spesa & Vincita a testa */}
+                  {/* Divisione Spesa a Testa */}
                   <div className="mt-3 pt-3 border-t border-[var(--border-subtle)] bg-[var(--surface-sub)] p-3 rounded-lg">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-[11px] font-bold text-[var(--text-muted)] uppercase">Partecipanti alla spesa:</span>
@@ -966,36 +1067,9 @@ export default function RoomPage() {
             )}
           </div>
         )}
-
-        {/* Tab 4: Comparatore Standalone */}
-        {activeTab === "comparatore" && (
-          <div className="space-y-1.5">
-            {bookmakers.map((b) => (
-              <div key={b.name} className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-2.5 flex items-center justify-between">
-                <div>
-                  <div className="text-xs font-bold">{b.name}</div>
-                  <div className="text-[10px] text-[var(--text-muted)]">Bonus incluso</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-xs font-mono font-bold text-emerald-500">
-                    {(Number(potentialWin) * b.bonus).toFixed(2)} €
-                  </div>
-                  <a
-                    href={b.link}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[9px] uppercase font-bold text-[#0084ff]"
-                  >
-                    Apri ↗
-                  </a>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
       </main>
 
-      {/* TENDINA SCHEDINA IN BASSO A DESTRA PIÙ GRANDE (CON TASTO DIRETTO A SCHEDINA SQUAD) */}
+      {/* Widget Schedina Flottante NovaJackpot */}
       {activeTab !== "schedina" && (
         <div className="fixed bottom-3 right-3 sm:right-6 z-40 flex flex-col items-end pointer-events-none">
           <div
@@ -1044,7 +1118,6 @@ export default function RoomPage() {
                     <span>{potentialWin} €</span>
                   </div>
 
-                  {/* PULSANTE UNICO DIRETTO: VAI A SCHEDINA SQUAD (Al posto di Storia e Invia) */}
                   <div className="pt-2">
                     <button
                       onClick={() => {
@@ -1062,7 +1135,6 @@ export default function RoomPage() {
             )}
           </div>
 
-          {/* PULSANTE NOVAJACKPOT INGRANDITO */}
           <button
             onClick={() => setIsSheetOpen(!isSheetOpen)}
             className="pointer-events-auto h-12 px-5 rounded-full bg-[#0084ff] hover:bg-[#0073e6] active:bg-[#0060c0] text-white font-black text-xs uppercase tracking-wider shadow-2xl flex items-center gap-2.5 cursor-pointer border border-white/20 transition-transform active:scale-95"

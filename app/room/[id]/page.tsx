@@ -29,6 +29,10 @@ export default function RoomPage() {
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [showRulesModal, setShowRulesModal] = useState(false);
 
+  // STATO PER MODALE DETTAGLIO PARTITA CON TUTTE LE OPZIONI
+  const [detailMatch, setDetailMatch] = useState<any | null>(null);
+  const [detailCategory, setDetailCategory] = useState<string>("PRINCIPALI");
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const channelRef = useRef<any>(null);
 
@@ -79,7 +83,6 @@ export default function RoomPage() {
 
     const abortController = new AbortController();
 
-    // Inizializza stanza e garantisce esistenza record per FK
     supabase
       .from("rooms")
       .select("*")
@@ -257,14 +260,14 @@ export default function RoomPage() {
     return picks.some((p) => p.match_id === matchId && p.selection === sel && p.status !== "rejected");
   }, [picks]);
 
-  // Gestione selezioni con inserimento resiliente
+  // Gestione selezioni con sostituzione automatica per mercato
   const handlePickAction = async (match: any, market: string, selection: string, odds: number) => {
     const isDirect = betMode === "libera";
     const initialStatus = isDirect ? "confirmed" : "pending";
     const safeMatchId = match.id;
     const currentPicks = picksRef.current;
 
-    // 1. Deselezione se già attiva
+    // 1. Deselezione al secondo tocco
     const existingSameSelection = currentPicks.find(
       (p) => p.match_id === safeMatchId && p.selection === selection && p.status !== "rejected"
     );
@@ -273,7 +276,7 @@ export default function RoomPage() {
       if (betMode === "libera") {
         removePick(existingSameSelection.id);
       } else {
-        showToast("⚠️ Pronostico già presente.");
+        showToast("⚠️ Pronostico già presente in votazione.");
       }
       return;
     }
@@ -293,7 +296,7 @@ export default function RoomPage() {
       };
 
       setPicks((prev) => prev.map((p) => (p.id === existingMarketPick.id ? updatedPick : p)));
-      showToast(`🔄 Aggiornato: ${selection}`);
+      showToast(`🔄 Aggiornato ${market}: ${selection}`);
 
       try {
         await supabase
@@ -309,7 +312,7 @@ export default function RoomPage() {
       return;
     }
 
-    // 3. Inserimento nuovo pick con fallback locale (non si cancella se Supabase ha un'anomalia)
+    // 3. Inserimento nuovo pick
     const tempId = `pick_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const newPick = {
       id: tempId,
@@ -324,7 +327,6 @@ export default function RoomPage() {
       status: initialStatus,
     };
 
-    // Aggiunta immediata nello stato locale
     setPicks((prev) => [...prev, newPick]);
     showToast(isDirect ? `✅ Aggiunto: ${selection}` : `🗳️ Proposta: ${selection}`);
 
@@ -343,9 +345,7 @@ export default function RoomPage() {
       if (!error && data) {
         setPicks((prev) => prev.map((p) => (p.id === tempId ? data : p)));
       }
-    } catch {
-      // Mantiene comunque il pronostico in locale
-    }
+    } catch {}
   };
 
   const votePick = async (pick: any, val: number) => {
@@ -571,6 +571,468 @@ export default function RoomPage() {
     { name: "Champions League", code: "EU", region: "Europa" }
   ];
 
+  // TUTTE LE 15 MACRO-CATEGORIE DEI SITI DI SCOMMESSE (ADM / LOTTOMATICA / SISAL)
+  const detailCategories = [
+    "PRINCIPALI",
+    "COMBO",
+    "MULTIGOAL",
+    "GIOCATORI",
+    "MULTI GIOCATORI",
+    "TEMPI",
+    "CASA/OSPITE",
+    "GOAL",
+    "RISULTATI",
+    "CORNER",
+    "SANZIONI",
+    "MINUTI",
+    "SPECIALI MATCH",
+    "STATS MATCH",
+    "MONITOR VAR"
+  ];
+
+  // GENERATORE DINAMICO COMPLETO DEI MERCATI PER LA PARTITA
+  const getMarketsForMatch = (m: any, category: string) => {
+    const base1 = Number(m.odds1X2?.["1"] || 2.10);
+    const baseX = Number(m.odds1X2?.["X"] || 3.25);
+    const base2 = Number(m.odds1X2?.["2"] || 3.40);
+
+    switch (category) {
+      case "PRINCIPALI":
+        return [
+          {
+            title: "Esito Finale 1X2",
+            market: "1X2",
+            cols: 3,
+            items: [
+              { label: "1", odds: base1 },
+              { label: "X", odds: baseX },
+              { label: "2", odds: base2 }
+            ]
+          },
+          {
+            title: "Doppia Chance",
+            market: "Doppia Chance",
+            cols: 3,
+            items: [
+              { label: "1X", odds: Number(m.oddsDC?.["1X"] || 1.30) },
+              { label: "12", odds: Number(m.oddsDC?.["12"] || 1.32) },
+              { label: "X2", odds: Number(m.oddsDC?.["X2"] || 1.68) }
+            ]
+          },
+          {
+            title: "Under / Over 2.5",
+            market: "Under/Over",
+            cols: 2,
+            items: [
+              { label: "Under 2.5", odds: Number(m.oddsUO?.["Under 2.5"] || 1.85) },
+              { label: "Over 2.5", odds: Number(m.oddsUO?.["Over 2.5"] || 1.95) }
+            ]
+          },
+          {
+            title: "Goal / NoGoal (Entrambe segnano)",
+            market: "Goal/NoGoal",
+            cols: 2,
+            items: [
+              { label: "Goal", odds: Number(m.oddsGG?.["Goal"] || 1.75) },
+              { label: "NoGoal", odds: Number(m.oddsGG?.["NoGoal"] || 2.05) }
+            ]
+          },
+          {
+            title: "Draw No Bet (Rimborso in caso di parità)",
+            market: "Draw No Bet",
+            cols: 2,
+            items: [
+              { label: `DNB ${m.home}`, odds: Number((base1 * 0.72).toFixed(2)) },
+              { label: `DNB ${m.away}`, odds: Number((base2 * 0.72).toFixed(2)) }
+            ]
+          }
+        ];
+
+      case "COMBO":
+        return [
+          {
+            title: "1X2 + Under/Over 2.5",
+            market: "Combo 1X2 + U/O",
+            cols: 3,
+            items: [
+              { label: "1 + Over 2.5", odds: Number((base1 * 1.55).toFixed(2)) },
+              { label: "X + Over 2.5", odds: Number((baseX * 2.10).toFixed(2)) },
+              { label: "2 + Over 2.5", odds: Number((base2 * 1.60).toFixed(2)) },
+              { label: "1 + Under 2.5", odds: Number((base1 * 1.80).toFixed(2)) },
+              { label: "X + Under 2.5", odds: Number((baseX * 1.30).toFixed(2)) },
+              { label: "2 + Under 2.5", odds: Number((base2 * 1.85).toFixed(2)) }
+            ]
+          },
+          {
+            title: "1X2 + Goal/NoGoal",
+            market: "Combo 1X2 + GG/NG",
+            cols: 3,
+            items: [
+              { label: "1 + Goal", odds: Number((base1 * 1.65).toFixed(2)) },
+              { label: "X + Goal", odds: Number((baseX * 1.45).toFixed(2)) },
+              { label: "2 + Goal", odds: Number((base2 * 1.70).toFixed(2)) },
+              { label: "1 + NoGoal", odds: Number((base1 * 1.75).toFixed(2)) },
+              { label: "X + NoGoal", odds: Number((baseX * 2.30).toFixed(2)) },
+              { label: "2 + NoGoal", odds: Number((base2 * 1.90).toFixed(2)) }
+            ]
+          },
+          {
+            title: "Doppia Chance + Under/Over 2.5",
+            market: "Combo DC + U/O",
+            cols: 2,
+            items: [
+              { label: "1X + Over 2.5", odds: 2.15 },
+              { label: "1X + Under 2.5", odds: 2.10 },
+              { label: "X2 + Over 2.5", odds: 2.75 },
+              { label: "X2 + Under 2.5", odds: 2.30 }
+            ]
+          }
+        ];
+
+      case "MULTIGOAL":
+        return [
+          {
+            title: "Multigoal Totali Match",
+            market: "Multigoal",
+            cols: 3,
+            items: [
+              { label: "1-2 Goal", odds: 2.10 },
+              { label: "1-3 Goal", odds: 1.42 },
+              { label: "2-3 Goal", odds: 1.95 },
+              { label: "2-4 Goal", odds: 1.50 },
+              { label: "2-5 Goal", odds: 1.33 },
+              { label: "3-5 Goal", odds: 2.05 }
+            ]
+          },
+          {
+            title: `Multigoal Casa (${m.home})`,
+            market: `Multigoal ${m.home}`,
+            cols: 3,
+            items: [
+              { label: "Casa 1-2 Goal", odds: 1.60 },
+              { label: "Casa 1-3 Goal", odds: 1.30 },
+              { label: "Casa 2-3 Goal", odds: 2.45 }
+            ]
+          },
+          {
+            title: `Multigoal Ospite (${m.away})`,
+            market: `Multigoal ${m.away}`,
+            cols: 3,
+            items: [
+              { label: "Ospite 1-2 Goal", odds: 1.65 },
+              { label: "Ospite 1-3 Goal", odds: 1.35 },
+              { label: "Ospite 2-3 Goal", odds: 2.80 }
+            ]
+          }
+        ];
+
+      case "GIOCATORI":
+        return [
+          {
+            title: "Marcatore nei 90 Minuti",
+            market: "Marcatore",
+            cols: 2,
+            items: [
+              { label: `Attaccante Top ${m.home}`, odds: 2.40 },
+              { label: `Attaccante Top ${m.away}`, odds: 2.90 },
+              { label: `Trequartista ${m.home}`, odds: 3.60 },
+              { label: `Centrocampista ${m.away}`, odds: 4.50 }
+            ]
+          },
+          {
+            title: "Primo Marcatore del Match",
+            market: "Primo Marcatore",
+            cols: 2,
+            items: [
+              { label: `1° Gol: Top ${m.home}`, odds: 5.50 },
+              { label: `1° Gol: Top ${m.away}`, odds: 6.75 },
+              { label: "Nessun Gol (0-0)", odds: 8.50 }
+            ]
+          },
+          {
+            title: "Doppietta o Superiore",
+            market: "Doppietta",
+            cols: 2,
+            items: [
+              { label: `Doppietta Bomber ${m.home}`, odds: 8.50 },
+              { label: `Doppietta Bomber ${m.away}`, odds: 11.00 }
+            ]
+          }
+        ];
+
+      case "MULTI GIOCATORI":
+        return [
+          {
+            title: "Duo Marcatore (Almeno uno dei due segna)",
+            market: "Duo Marcatore",
+            cols: 2,
+            items: [
+              { label: `Bomber ${m.home} o Bomber ${m.away}`, odds: 1.65 },
+              { label: `Coppia D'Attacco ${m.home}`, odds: 1.55 }
+            ]
+          },
+          {
+            title: "Combo Marcatori (Entrambi segnano)",
+            market: "Combo Marcatori",
+            cols: 1,
+            items: [
+              { label: `Segnano entrambi i Top Players`, odds: 6.50 }
+            ]
+          }
+        ];
+
+      case "TEMPI":
+        return [
+          {
+            title: "Esito 1° Tempo (1X2 al 45')",
+            market: "1X2 1° Tempo",
+            cols: 3,
+            items: [
+              { label: "1 1°T", odds: Number((base1 * 1.35).toFixed(2)) },
+              { label: "X 1°T", odds: 2.15 },
+              { label: "2 1°T", odds: Number((base2 * 1.35).toFixed(2)) }
+            ]
+          },
+          {
+            title: "Tempo con Maggior Numero di Goal",
+            market: "Tempo con più Goal",
+            cols: 3,
+            items: [
+              { label: "1° Tempo", odds: 3.10 },
+              { label: "Stesso n° Gol (X)", odds: 3.45 },
+              { label: "2° Tempo", odds: 2.05 }
+            ]
+          }
+        ];
+
+      case "CASA/OSPITE":
+        return [
+          {
+            title: `Prestazione ${m.home} (Casa)`,
+            market: `Opzioni ${m.home}`,
+            cols: 2,
+            items: [
+              { label: `${m.home} Segna Gol`, odds: 1.22 },
+              { label: `${m.home} Vince a Zero`, odds: 3.40 },
+              { label: `${m.home} Segna in Entrambi i Tempi`, odds: 3.15 },
+              { label: `${m.home} Clean Sheet (Non subisce gol)`, odds: 2.80 }
+            ]
+          },
+          {
+            title: `Prestazione ${m.away} (Ospite)`,
+            market: `Opzioni ${m.away}`,
+            cols: 2,
+            items: [
+              { label: `${m.away} Segna Gol`, odds: 1.38 },
+              { label: `${m.away} Vince a Zero`, odds: 5.20 },
+              { label: `${m.away} Segna in Entrambi i Tempi`, odds: 4.50 },
+              { label: `${m.away} Clean Sheet (Non subisce gol)`, odds: 3.60 }
+            ]
+          }
+        ];
+
+      case "GOAL":
+        return [
+          {
+            title: "Somma Goal Esatta",
+            market: "Somma Goal",
+            cols: 3,
+            items: [
+              { label: "0 Goal", odds: 8.50 },
+              { label: "1 Goal", odds: 4.40 },
+              { label: "2 Goal", odds: 3.35 },
+              { label: "3 Goal", odds: 3.80 },
+              { label: "4 Goal", odds: 5.50 },
+              { label: "5 o più Goal", odds: 7.25 }
+            ]
+          },
+          {
+            title: "Goal Pari o Dispari",
+            market: "Pari/Dispari",
+            cols: 2,
+            items: [
+              { label: "Pari", odds: 1.88 },
+              { label: "Dispari", odds: 1.92 }
+            ]
+          }
+        ];
+
+      case "RISULTATI":
+        return [
+          {
+            title: "Risultato Esatto Tradizionale",
+            market: "Risultato Esatto",
+            cols: 4,
+            items: [
+              { label: "1-0", odds: 7.50 },
+              { label: "2-0", odds: 9.50 },
+              { label: "2-1", odds: 8.75 },
+              { label: "3-0", odds: 17.00 },
+              { label: "0-0", odds: 9.00 },
+              { label: "1-1", odds: 6.25 },
+              { label: "2-2", odds: 13.00 },
+              { label: "3-3", odds: 45.00 },
+              { label: "0-1", odds: 9.50 },
+              { label: "0-2", odds: 16.00 },
+              { label: "1-2", odds: 11.50 },
+              { label: "Altro", odds: 18.00 }
+            ]
+          }
+        ];
+
+      case "CORNER":
+        return [
+          {
+            title: "Calci d'Angolo Totali (Under / Over)",
+            market: "Corner U/O",
+            cols: 2,
+            items: [
+              { label: "Under 8.5 Corner", odds: 2.10 },
+              { label: "Over 8.5 Corner", odds: 1.65 },
+              { label: "Under 9.5 Corner", odds: 1.80 },
+              { label: "Over 9.5 Corner", odds: 1.90 },
+              { label: "Under 10.5 Corner", odds: 1.55 },
+              { label: "Over 10.5 Corner", odds: 2.30 }
+            ]
+          },
+          {
+            title: "1X2 Calci d'Angolo",
+            market: "1X2 Corner",
+            cols: 3,
+            items: [
+              { label: `Più Corner ${m.home}`, odds: 1.70 },
+              { label: "Stesso n° Corner (X)", odds: 7.50 },
+              { label: `Più Corner ${m.away}`, odds: 2.45 }
+            ]
+          }
+        ];
+
+      case "SANZIONI":
+        return [
+          {
+            title: "Cartellini Totali Match (Under / Over)",
+            market: "Cartellini U/O",
+            cols: 2,
+            items: [
+              { label: "Under 4.5 Cartellini", odds: 1.85 },
+              { label: "Over 4.5 Cartellini", odds: 1.85 },
+              { label: "Under 5.5 Cartellini", odds: 1.45 },
+              { label: "Over 5.5 Cartellini", odds: 2.55 }
+            ]
+          },
+          {
+            title: "Espulsione nel Match (Cartellino Rosso)",
+            market: "Espulsione",
+            cols: 2,
+            items: [
+              { label: "Espulsione SÌ", odds: 3.45 },
+              { label: "Espulsione NO", odds: 1.25 }
+            ]
+          }
+        ];
+
+      case "MINUTI":
+        return [
+          {
+            title: "Goal nei Primi 15 Minuti (00:00 - 14:59)",
+            market: "Goal Minuti",
+            cols: 2,
+            items: [
+              { label: "Goal 1-15' SÌ", odds: 2.95 },
+              { label: "Goal 1-15' NO", odds: 1.35 }
+            ]
+          },
+          {
+            title: "Goal nel Finale (76:00 - 90:00 + recupero)",
+            market: "Goal Finale",
+            cols: 2,
+            items: [
+              { label: "Goal 76-90' SÌ", odds: 1.95 },
+              { label: "Goal 76-90' NO", odds: 1.75 }
+            ]
+          }
+        ];
+
+      case "SPECIALI MATCH":
+        return [
+          {
+            title: "Rigore Assegnato nel Match",
+            market: "Rigore",
+            cols: 2,
+            items: [
+              { label: "Rigore SÌ", odds: 2.75 },
+              { label: "Rigore NO", odds: 1.40 }
+            ]
+          },
+          {
+            title: "Ribaltone / Rimonta Completa",
+            market: "Ribaltone",
+            cols: 2,
+            items: [
+              { label: `Rimonta ${m.home}`, odds: 7.50 },
+              { label: `Rimonta ${m.away}`, odds: 9.00 }
+            ]
+          },
+          {
+            title: "Autogol nel Match",
+            market: "Autogol",
+            cols: 2,
+            items: [
+              { label: "Autogol SÌ", odds: 8.00 },
+              { label: "Autogol NO", odds: 1.05 }
+            ]
+          }
+        ];
+
+      case "STATS MATCH":
+        return [
+          {
+            title: "Tiri Totali in Porta (Under / Over 8.5)",
+            market: "Tiri in Porta",
+            cols: 2,
+            items: [
+              { label: "Under 8.5 Tiri Porta", odds: 1.95 },
+              { label: "Over 8.5 Tiri Porta", odds: 1.75 }
+            ]
+          },
+          {
+            title: "Fuorigioco Totali (Under / Over 3.5)",
+            market: "Fuorigioco",
+            cols: 2,
+            items: [
+              { label: "Under 3.5 Fuorigioco", odds: 1.80 },
+              { label: "Over 3.5 Fuorigioco", odds: 1.90 }
+            ]
+          }
+        ];
+
+      case "MONITOR VAR":
+        return [
+          {
+            title: "On-Field Review (Arbitro al Monitor VAR)",
+            market: "Monitor VAR",
+            cols: 2,
+            items: [
+              { label: "Controllo al Monitor SÌ", odds: 3.20 },
+              { label: "Controllo al Monitor NO", odds: 1.30 }
+            ]
+          },
+          {
+            title: "Goal Annullato dal VAR nel Match",
+            market: "Gol Annullato VAR",
+            cols: 2,
+            items: [
+              { label: "Gol Annullato SÌ", odds: 3.75 },
+              { label: "Gol Annullato NO", odds: 1.22 }
+            ]
+          }
+        ];
+
+      default:
+        return [];
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[var(--bg-main)] text-[var(--text-main)] pb-44 font-sans antialiased select-none">
       <canvas ref={canvasRef} className="hidden" />
@@ -582,51 +1044,101 @@ export default function RoomPage() {
         </div>
       )}
 
-      {/* Modal Regole ADM */}
-      {showRulesModal && (
+      {/* MODAL DETTAGLIO PARTITA CON TUTTE LE 15 CATEGORIE UFFICIALI */}
+      {detailMatch && (
         <div 
-          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4"
-          onClick={() => setShowRulesModal(false)}
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4"
+          onClick={() => setDetailMatch(null)}
         >
           <div 
-            className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-xl max-w-lg w-full p-5 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto"
+            className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-xl max-w-3xl w-full h-[90vh] flex flex-col shadow-2xl overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-2">
-              <span className="font-black text-sm uppercase tracking-wider text-white">⚖️ Regolamento Scommesse ADM</span>
-              <button 
-                onClick={() => setShowRulesModal(false)} 
-                className="text-sm font-bold text-[var(--text-muted)] hover:text-white px-2 py-0.5 rounded bg-[var(--surface-quote)] cursor-pointer"
+            {/* Header del Match Dettagliato */}
+            <div className="bg-[var(--surface-header)] border-b border-[var(--border-subtle)] p-3 sm:p-4 flex items-center justify-between shrink-0">
+              <div>
+                <span className="text-[10px] font-mono text-[#0084ff] uppercase font-bold tracking-wider">
+                  {detailMatch.league || "Serie A TIM"} • PALINSESTO COMPLETO
+                </span>
+                <h3 className="text-sm sm:text-base font-black truncate text-white mt-0.5">
+                  {detailMatch.home} <span className="text-[var(--text-muted)] font-normal">vs</span> {detailMatch.away}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetailMatch(null)}
+                className="w-8 h-8 rounded-full bg-[var(--surface-quote)] hover:bg-[var(--surface-quote-hover)] flex items-center justify-center text-sm font-bold text-[var(--text-muted)] hover:text-white cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            <div className="space-y-3 text-xs leading-relaxed text-[var(--text-muted)]">
-              <div>
-                <h4 className="font-bold text-white uppercase text-[11px]">1. Importi di Puntata e Vincita Massima</h4>
-                <p>La puntata minima ammessa è di <strong>1,00 €</strong>. Il massimale di vincita per singolo biglietto è fissato a <strong>€ 50.000,00</strong> a norma di legge ADM.</p>
-              </div>
-              <div>
-                <h4 className="font-bold text-white uppercase text-[11px]">2. Selezione Mercati Multipli</h4>
-                <p>È possibile combinare liberamente mercati differenti. Se si seleziona una nuova quota all'interno dello stesso mercato per il medesimo match, il sistema aggiorna direttamente la scelta.</p>
-              </div>
-              <div>
-                <h4 className="font-bold text-white uppercase text-[11px]">3. Bonus Multipla Progressivo</h4>
-                <p>Partecipano al bonus solo gli eventi con <strong>quota pari o superiore a 1.25</strong>. Il bonus si attiva dal 5° evento valido (+5%) e incrementa del +5% per ogni evento successivo.</p>
-              </div>
-              <div>
-                <h4 className="font-bold text-white uppercase text-[11px]">4. Avvenimenti Annullati o Rinviati (Quota 1.00)</h4>
-                <p>Qualora un incontro venga posticipato e non disputato entro i termini ufficiali, la selezione viene considerata nulla e calcolata a <strong>quota 1.00</strong> senza invalidare il resto della multipla.</p>
-              </div>
+            {/* Menu Orizzontale a Scorrimento delle 15 Categorie */}
+            <div className="bg-[var(--surface-sub)] border-b border-[var(--border-subtle)] px-2.5 py-2 overflow-x-auto flex gap-1.5 no-scrollbar shrink-0">
+              {detailCategories.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setDetailCategory(cat)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition cursor-pointer ${
+                    detailCategory === cat
+                      ? "bg-[#0084ff] text-white shadow-sm"
+                      : "bg-[var(--surface-quote)] hover:bg-[var(--surface-quote-hover)] text-[var(--text-muted)]"
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
             </div>
 
-            <button
-              onClick={() => setShowRulesModal(false)}
-              className="w-full py-2 bg-[#0084ff] text-white text-xs font-bold uppercase rounded-lg cursor-pointer"
-            >
-              Ho Capito
-            </button>
+            {/* Griglia Mercati e Quote della Categoria Selezionata */}
+            <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-4">
+              {getMarketsForMatch(detailMatch, detailCategory).map((group: any) => (
+                <div key={group.title} className="bg-[var(--surface-header)] border border-[var(--border-subtle)] rounded-lg overflow-hidden shadow-sm">
+                  <div className="bg-[var(--surface-sub)] px-3 py-2 text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] border-b border-[var(--border-subtle)]">
+                    {group.title}
+                  </div>
+                  <div className={`p-2.5 grid gap-2 ${
+                    group.cols === 4 ? "grid-cols-2 sm:grid-cols-4" :
+                    group.cols === 3 ? "grid-cols-3" :
+                    group.cols === 2 ? "grid-cols-2" : "grid-cols-1"
+                  }`}>
+                    {group.items.map((item: any) => {
+                      const selected = isSelected(detailMatch.id, item.label);
+                      return (
+                        <button
+                          key={item.label}
+                          type="button"
+                          onClick={() => handlePickAction(detailMatch, group.market, item.label, item.odds)}
+                          className={`min-h-[46px] p-2 flex flex-col items-center justify-center rounded-lg border transition cursor-pointer active:scale-95 text-center ${
+                            selected
+                              ? "bg-[#0084ff] border-white text-white shadow-md font-black"
+                              : "bg-[var(--surface-quote)] hover:bg-[var(--surface-quote-hover)] border-[var(--border-subtle)] text-[var(--quote-val)]"
+                          }`}
+                        >
+                          <span className="text-[11px] leading-tight text-[var(--text-muted)] font-semibold mb-0.5">{item.label}</span>
+                          <span className="text-xs font-bold font-mono text-amber-400 tabular-nums">{item.odds.toFixed(2)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer Modal con Tasto Rapido */}
+            <div className="bg-[var(--surface-sub)] border-t border-[var(--border-subtle)] p-3 flex items-center justify-between shrink-0">
+              <span className="text-xs font-bold text-[var(--text-muted)]">
+                In schedina: <span className="text-white font-mono">{confirmed.length} eventi</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setDetailMatch(null)}
+                className="px-4 py-2 bg-[#0084ff] text-white text-xs font-bold uppercase rounded-lg cursor-pointer"
+              >
+                Chiudi Palinsesto
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -879,12 +1391,26 @@ export default function RoomPage() {
 
                           return (
                             <div key={`row_${m.id}`} className="p-3 flex items-center justify-between gap-2 relative">
-                              <div className="min-w-0 flex-1 pr-2">
-                                <span className="text-[10px] font-mono text-[var(--text-muted)] block mb-0.5">{timeStr}</span>
-                                <div className="text-xs font-bold truncate">{m.home}</div>
-                                <div className="text-xs font-bold truncate">{m.away}</div>
+                              {/* CLICCANDO SUL MATCH SI APRE IL DETTAGLIO CON TUTTE LE OPZIONI */}
+                              <div 
+                                onClick={() => {
+                                  setDetailMatch(m);
+                                  setDetailCategory("PRINCIPALI");
+                                }}
+                                className="min-w-0 flex-1 pr-2 cursor-pointer group select-none"
+                                title="Clicca per aprire tutte le opzioni scommessa del match"
+                              >
+                                <div className="flex items-center gap-1.5 mb-0.5">
+                                  <span className="text-[10px] font-mono text-[var(--text-muted)]">{timeStr}</span>
+                                  <span className="text-[9px] bg-[#0084ff]/15 text-[#0084ff] px-1.5 py-0.2 rounded font-bold uppercase group-hover:bg-[#0084ff] group-hover:text-white transition">
+                                    +TUTTI I MERCATI ➔
+                                  </span>
+                                </div>
+                                <div className="text-xs font-bold truncate group-hover:text-[#0084ff] transition">{m.home}</div>
+                                <div className="text-xs font-bold truncate group-hover:text-[#0084ff] transition">{m.away}</div>
                               </div>
 
+                              {/* QUOTE RAPIDE PALINSESTO */}
                               <div className="shrink-0 relative z-10">
                                 {marketFilter === "1X2" && (
                                   <div className="grid grid-cols-3 gap-1.5 w-[190px] sm:w-[220px]">
@@ -1245,7 +1771,7 @@ export default function RoomPage() {
         )}
       </main>
 
-      {/* Widget NovaJackpot: Nessun elemento nel DOM se chiuso */}
+      {/* Widget NovaJackpot */}
       {activeTab !== "schedina" && (
         <div className="fixed bottom-3 right-3 sm:right-6 z-40 flex flex-col items-end pointer-events-none">
           {isSheetOpen && (

@@ -428,20 +428,21 @@ export default function RoomPage() {
   const pending = picks.filter((p) => p.status === "pending");
   const historyPicks = picks.filter((p) => p.status === "confirmed" || p.status === "rejected");
 
-  const rawMultiplier = confirmed.reduce((acc, p) => acc * Number(p.odds), 1);
-  const totalOdds = confirmed.length > 0 ? (Math.round(rawMultiplier * 100) / 100).toFixed(2) : "0.00";
+  const activeSheetItems = betMode === "voto" ? picks : confirmed;
 
-  const qualifyingEvents = confirmed.filter((p) => Number(p.odds) >= 1.25).length;
+  const rawMultiplier = activeSheetItems.reduce((acc, p) => acc * Number(p.odds), 1);
+  const totalOdds = activeSheetItems.length > 0 ? (Math.round(rawMultiplier * 100) / 100).toFixed(2) : "0.00";
+
+  const qualifyingEvents = activeSheetItems.filter((p) => Number(p.odds) >= 1.25).length;
   const bonusPct = qualifyingEvents >= 5 ? (qualifyingEvents - 4) * 5 : 0;
   const bonusMultiplier = 1 + bonusPct / 100;
 
-  const rawPotentialWin = confirmed.length > 0 ? Number(stake) * Number(totalOdds) * bonusMultiplier : 0;
+  const rawPotentialWin = activeSheetItems.length > 0 ? Number(stake) * Number(totalOdds) * bonusMultiplier : 0;
   const isCapped = rawPotentialWin > 50000;
-  const potentialWin = confirmed.length > 0 ? (Math.min(50000, Math.round(rawPotentialWin * 100) / 100)).toFixed(2) : "0.00";
-  const baseWin = confirmed.length > 0 ? (Math.round(Number(stake) * Number(totalOdds) * 100) / 100) : 0;
+  const potentialWin = activeSheetItems.length > 0 ? (Math.min(50000, Math.round(rawPotentialWin * 100) / 100)).toFixed(2) : "0.00";
 
   const safeParticipants = Math.max(1, participantsCount);
-  const stakePerHead = confirmed.length > 0 ? (stake / safeParticipants).toFixed(2) : "0.00";
+  const stakePerHead = activeSheetItems.length > 0 ? (stake / safeParticipants).toFixed(2) : "0.00";
   const winPerHead = (Number(potentialWin) / safeParticipants).toFixed(2);
 
   const bookmakersConfig = [
@@ -454,7 +455,7 @@ export default function RoomPage() {
 
   const evaluatedBookmakers = useMemo(() => {
     return bookmakersConfig.map((b) => {
-      const supportsAll = confirmed.every((c) => b.supportedMarkets.some(m => c.market.includes(m) || m.includes(c.market)));
+      const supportsAll = activeSheetItems.every((c) => b.supportedMarkets.some(m => c.market.includes(m) || m.includes(c.market)));
       const rawPayout = Number(potentialWin) * b.bonus;
       const finalPayout = Math.min(50000, Math.round(rawPayout * 100) / 100);
       return {
@@ -463,15 +464,15 @@ export default function RoomPage() {
         finalPayout: finalPayout.toFixed(2)
       };
     }).sort((x, y) => Number(y.finalPayout) - Number(x.finalPayout));
-  }, [confirmed, potentialWin]);
+  }, [activeSheetItems, potentialWin]);
 
   const copyForWhatsApp = () => {
     const text = `🔥 BetSquad [${roomId}]\n` +
       `📌 Sessione: ${roomName}\n` +
       `⚙️ Regole: ${betMode === "libera" ? "Libera" : "A Voto"}\n` +
       `👥 Partecipanti: ${safeParticipants} (${stakePerHead}€ a testa)\n` +
-      `📌 Pronostici (${confirmed.length}):\n` +
-      confirmed.map((c) => `• ${c.match_label}: ${c.selection} [${c.market}] @${Number(c.odds).toFixed(2)}`).join("\n") +
+      `📌 Pronostici (${activeSheetItems.length}):\n` +
+      activeSheetItems.map((c) => `• ${c.match_label}: ${c.selection} [${c.market}] @${Number(c.odds).toFixed(2)}`).join("\n") +
       `\n\n💰 Quota Totale: @${totalOdds}` +
       (bonusPct > 0 ? `\n🎁 Bonus Multipla: +${bonusPct}%` : "") +
       `\n💵 Puntata: ${stake}€ (Vincita a testa: ${winPerHead}€)` +
@@ -564,12 +565,12 @@ export default function RoomPage() {
     drawRoundedRect(ctx, 80, 330, 920, 1020, 28);
 
     let yPos = 420;
-    if (confirmed.length === 0) {
+    if (activeSheetItems.length === 0) {
       ctx.fillStyle = "#94a3b8";
       ctx.font = "italic 40px sans-serif";
       ctx.fillText("Nessun pronostico inserito", 140, yPos);
     } else {
-      confirmed.slice(0, 8).forEach((c, idx) => {
+      activeSheetItems.slice(0, 8).forEach((c, idx) => {
         ctx.textAlign = "left";
         ctx.textBaseline = "alphabetic";
         ctx.fillStyle = "#ffffff";
@@ -1458,13 +1459,14 @@ export default function RoomPage() {
         )}
       </main>
 
+      {/* Widget Schedina / Anteprima a Larghezza Finestra */}
       {activeTab !== "schedina" && (
-        <div className="fixed bottom-3 right-3 sm:right-6 z-40 flex flex-col items-end pointer-events-none">
+        <div className="fixed bottom-3 right-3 left-3 sm:left-auto sm:right-6 z-40 flex flex-col items-center sm:items-end pointer-events-none">
           {isSheetOpen && (
-            <div className="w-[calc(100vw-24px)] max-w-[340px] sm:max-w-[380px] bg-[var(--surface-card)] border border-[var(--border-strong)] rounded-xl shadow-2xl p-3.5 mb-2 pointer-events-auto max-h-[65vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
+            <div className="w-full sm:w-[380px] bg-[var(--surface-card)] border border-[var(--border-strong)] rounded-xl shadow-2xl p-4 mb-2 pointer-events-auto max-h-[75vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
               <div className="flex items-center justify-between pb-2 border-b border-[var(--border-subtle)]">
-                <span className="text-xs font-bold uppercase tracking-wider">
-                  {betMode === "voto" ? `Voti & Proposte (${picks.length})` : `Schedina Rapida (${confirmed.length})`}
+                <span className="text-xs font-bold uppercase tracking-wider text-white">
+                  {betMode === "voto" ? `Voti & Proposte (${picks.length})` : `Anteprima Schedina (${confirmed.length})`}
                 </span>
                 <button
                   type="button"
@@ -1475,33 +1477,70 @@ export default function RoomPage() {
                 </button>
               </div>
 
-              {(betMode === "voto" ? picks : confirmed).length === 0 ? (
+              {activeSheetItems.length === 0 ? (
                 <div className="py-6 text-center text-xs text-[var(--text-muted)]">
                   Nessuna giocata presente. Clicca sulle quote in pagina per aggiungerle.
                 </div>
               ) : (
-                <div className="divide-y divide-[var(--border-subtle)] py-1.5">
-                  {(betMode === "voto" ? picks : confirmed).map((c) => (
-                    <div key={c.id} className="py-1.5 flex items-center justify-between text-xs">
-                      <div className="pr-2 truncate">
-                        <div className="font-bold truncate text-white">{c.match_label}</div>
-                        <div className="text-[10px] text-[#0084ff] font-semibold">{c.selection}</div>
+                <div className="space-y-3 py-2">
+                  <div className="divide-y divide-[var(--border-subtle)] max-h-48 overflow-y-auto">
+                    {activeSheetItems.map((c) => (
+                      <div key={c.id} className="py-2 flex items-center justify-between text-xs">
+                        <div className="pr-2 truncate">
+                          <div className="font-bold truncate text-white">{c.match_label}</div>
+                          <div className="text-[10px] text-[#0084ff] font-semibold">{c.selection} ({c.market})</div>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="font-mono font-bold text-amber-400 text-xs">@{Number(c.odds).toFixed(2)}</span>
+                          <button type="button" onClick={() => removePick(c.id)} className="text-rose-500 text-xs px-1 cursor-pointer">✕</button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <span className="font-mono font-bold text-amber-400 text-xs">@{Number(c.odds).toFixed(2)}</span>
-                        <button type="button" onClick={() => removePick(c.id)} className="text-rose-500 text-xs px-1 cursor-pointer">✕</button>
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
 
-                  <div className="pt-2 mt-1 space-y-1.5 text-xs">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-[var(--text-muted)]">Quota: @{totalOdds}</span>
-                      <span className="text-[var(--text-muted)]">Puntata: {stake}€</span>
+                  {/* Selezione Puntata e Partecipanti direttamente nell'anteprima */}
+                  <div className="pt-2 border-t border-[var(--border-subtle)] space-y-2 text-xs">
+                    <div className="flex items-center justify-between bg-[var(--surface-sub)] p-2 rounded">
+                      <span className="text-[var(--text-muted)] uppercase font-bold text-[10px]">Puntata (€):</span>
+                      <div className="flex gap-1">
+                        {[5, 10, 20, 50].map((val) => (
+                          <button
+                            key={val}
+                            onClick={() => setStake(val)}
+                            className={`px-2 py-0.5 rounded text-xs font-bold cursor-pointer ${stake === val ? "bg-[#0084ff] text-white" : "bg-[var(--surface-quote)] text-[var(--text-muted)]"}`}
+                          >
+                            {val}€
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <div className="flex justify-between items-baseline pt-1 text-emerald-400 font-mono font-black text-base">
-                      <span className="text-xs uppercase font-bold text-[var(--text-muted)]">Vincita:</span>
+
+                    <div className="flex items-center justify-between bg-[var(--surface-sub)] p-2 rounded">
+                      <span className="text-[var(--text-muted)] uppercase font-bold text-[10px]">Partecipanti:</span>
+                      <select
+                        value={participantsCount}
+                        onChange={(e) => setParticipantsCount(Number(e.target.value))}
+                        className="bg-[var(--bg-main)] text-xs font-bold border border-[var(--border-subtle)] rounded px-2 py-0.5 text-white cursor-pointer"
+                      >
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map((num) => (
+                          <option key={num} value={num}>{num} {num === 1 ? "persona" : "persone"}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="flex justify-between text-xs pt-1">
+                      <span className="text-[var(--text-muted)]">Quota totale: @{totalOdds}</span>
+                      <span className="text-[var(--text-muted)]">Spesa a testa: <strong className="text-amber-400">{stakePerHead} €</strong></span>
+                    </div>
+
+                    <div className="flex justify-between items-baseline pt-1 border-t border-[var(--border-subtle)] text-emerald-400 font-mono font-black text-sm">
+                      <span className="text-xs uppercase font-bold text-[var(--text-muted)]">Vincita Totale:</span>
                       <span>{potentialWin} €</span>
+                    </div>
+
+                    <div className="flex justify-between items-baseline text-emerald-400 font-mono font-bold text-xs bg-emerald-500/10 p-2 rounded border border-emerald-500/20">
+                      <span className="uppercase text-[10px] text-emerald-300">Vincita a testa:</span>
+                      <span className="text-sm font-black">{winPerHead} €</span>
                     </div>
 
                     <div className="pt-2">
@@ -1520,16 +1559,22 @@ export default function RoomPage() {
             </div>
           )}
 
+          {/* Pulsante Anteprima Schedina largo quanto la finestra su mobile e dimensionato su desktop */}
           <button
             type="button"
             onClick={() => setIsSheetOpen((prev) => !prev)}
-            className="pointer-events-auto h-12 px-5 rounded-full bg-[#0084ff] hover:bg-[#0073e6] active:bg-[#0060c0] text-white font-black text-xs uppercase tracking-wider shadow-2xl flex items-center gap-2.5 cursor-pointer border border-white/20 transition-transform active:scale-95"
+            className="pointer-events-auto w-full sm:w-[380px] h-12 px-5 rounded-xl sm:rounded-full bg-[#0084ff] hover:bg-[#0073e6] active:bg-[#0060c0] text-white font-black text-xs uppercase tracking-wider shadow-2xl flex items-center justify-between cursor-pointer border border-white/20 transition-transform active:scale-95"
           >
-            <span>{betMode === "voto" ? "VOTAZIONI" : "SCHEDINA"}</span>
-            <span className="px-2 py-0.5 rounded-full bg-white/25 text-xs font-mono">
-              {betMode === "voto" ? picks.length : confirmed.length}
-            </span>
-            <span className="text-xs">{isSheetOpen ? "▼" : "▲"}</span>
+            <div className="flex items-center gap-2">
+              <span>ANTRIPRIMA SCHEDINA</span>
+              <span className="px-2 py-0.5 rounded-full bg-white/25 text-xs font-mono">
+                {activeSheetItems.length}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 font-mono">
+              <span className="text-amber-300">@{totalOdds}</span>
+              <span>{isSheetOpen ? "▼" : "▲"}</span>
+            </div>
           </button>
         </div>
       )}

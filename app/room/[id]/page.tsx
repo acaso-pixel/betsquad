@@ -473,8 +473,8 @@ export default function RoomPage() {
       `👥 Partecipanti: ${safeParticipants} (${stakePerHead}€ a testa)\n` +
       `📌 Pronostici (${activeSheetItems.length}):\n` +
       activeSheetItems.map((c) => `• ${c.match_label}: ${c.selection} [${c.market}] @${Number(c.odds).toFixed(2)}`).join("\n") +
-      `\n\n💰 Quota Totale: @${totalOdds}` +
-      (bonusPct > 0 ? `\n🎁 Bonus Multipla: +${bonusPct}%` : "") +
+      `\n\n💰 Quota Totale: ${totalOdds}` +
+      (bonusPct > 0 ? `\n🎁 Bonus Multipla: ${bonusPct}%` : "") +
       `\n💵 Puntata: ${stake}€ (Vincita a testa: ${winPerHead}€)` +
       `\n🏆 Vincita Totale: ${potentialWin}€` + (isCapped ? " (Massimale € 50.000)" : "") +
       `\n🔗 Entra nella stanza: ${window.location.href}`;
@@ -1232,7 +1232,7 @@ export default function RoomPage() {
                         </div>
                       </div>
                       <div className="shrink-0">
-                        <span className="font-mono font-bold text-amber-400 text-sm">@{Number(p.odds).toFixed(2)}</span>
+                        <span className="font-mono font-bold text-amber-400 text-sm">{Number(p.odds).toFixed(2)}</span>
                       </div>
                     </div>
 
@@ -1302,7 +1302,7 @@ export default function RoomPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
-                    <span className="font-mono font-bold text-amber-400">@{Number(item.odds).toFixed(2)}</span>
+                    <span className="font-mono font-bold text-amber-400">{Number(item.odds).toFixed(2)}</span>
                     {item.status === "confirmed" ? (
                       <span className="bg-emerald-500/15 text-emerald-400 text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1">
                         <CheckCircle2 className="w-3 h-3" /> Approvata
@@ -1364,7 +1364,7 @@ export default function RoomPage() {
                         <div className="text-[11px] text-[#0084ff] font-semibold">{c.selection} ({c.market})</div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className="font-mono font-bold text-amber-400 text-sm">@{Number(c.odds).toFixed(2)}</span>
+                        <span className="font-mono font-bold text-amber-400 text-sm">{Number(c.odds).toFixed(2)}</span>
                         <button onClick={() => removePick(c.id)} className="text-rose-500 px-1 text-sm cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>
                       </div>
                     </div>
@@ -1373,13 +1373,13 @@ export default function RoomPage() {
 
                 <div className="pt-3 border-t border-[var(--border-subtle)] space-y-2 text-xs">
                   <div className="flex justify-between">
-                    <span className="text-[var(--text-muted)]">Quota moltiplicatore:</span>
-                    <span className="font-mono font-bold text-sm">@{totalOdds}</span>
+                    <span className="text-[var(--text-muted)]">Quota totale:</span>
+                    <span className="font-mono font-bold text-sm">{totalOdds}</span>
                   </div>
                   {bonusPct > 0 && (
                     <div className="flex justify-between text-amber-500">
-                      <span>Bonus Multipla ({qualifyingEvents} eventi ≥ 1.25: +{bonusPct}%):</span>
-                      <span className="font-mono font-bold">+{((Number(potentialWin) - (Number(stake) * Number(totalOdds)))).toFixed(2)} €</span>
+                      <span>Bonus Multipla ({qualifyingEvents} eventi ≥ 1.25: {bonusPct}%):</span>
+                      <span className="font-mono font-bold">{((Number(potentialWin) - (Number(stake) * Number(totalOdds)))).toFixed(2)} €</span>
                     </div>
                   )}
 
@@ -1512,7 +1512,7 @@ export default function RoomPage() {
                           <div className="text-[10px] text-[#0084ff] font-semibold">{c.selection} ({c.market})</div>
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
-                          <span className="font-mono font-bold text-amber-400 text-xs">@{Number(c.odds).toFixed(2)}</span>
+                          <span className="font-mono font-bold text-amber-400 text-xs">{Number(c.odds).toFixed(2)}</span>
                           <button type="button" onClick={() => removePick(c.id)} className="text-rose-500 text-xs px-1 cursor-pointer">✕</button>
                         </div>
                       </div>
@@ -1558,7 +1558,7 @@ export default function RoomPage() {
                     </div>
 
                     <div className="flex justify-between text-xs pt-1">
-                      <span className="text-[var(--text-muted)]">Quota totale: @{totalOdds}</span>
+                      <span className="text-[var(--text-muted)]">Quota totale: {totalOdds}</span>
                       <span className="text-[var(--text-muted)]">Spesa a testa: <strong className="text-amber-400">{stakePerHead} €</strong></span>
                     </div>
 
@@ -1600,7 +1600,7 @@ export default function RoomPage() {
               </span>
             </div>
             <div className="flex items-center gap-2 font-mono">
-              <span className="text-amber-300">@{totalOdds}</span>
+              <span className="text-amber-300">{totalOdds}</span>
               <span>{isSheetOpen ? "▼" : "▲"}</span>
             </div>
           </button>

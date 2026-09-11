@@ -93,9 +93,16 @@ export default function RoomPage() {
         }
       });
 
-    fetch("/api/odds")
+    fetch(`/api/odds?t=${Date.now()}`, { cache: "no-store" })
       .then((res) => res.json())
-      .then((d) => setMatches(d.matches || []))
+      .then((d) => {
+        const rawList = Array.isArray(d.matches) ? d.matches : [];
+        const normalized = rawList.map((m: any) => ({
+          ...m,
+          league: m.league || "Serie A TIM"
+        }));
+        setMatches(normalized);
+      })
       .catch(() => setMatches([]))
       .finally(() => setLoading(false));
 
@@ -192,7 +199,8 @@ export default function RoomPage() {
   };
 
   const filteredMatches = useMemo(() => {
-    return matches.filter((m) => m.league === selectedLeague);
+    const matchesForLeague = matches.filter((m) => (m.league || "Serie A TIM") === selectedLeague);
+    return matchesForLeague.length > 0 ? matchesForLeague : (selectedLeague === "Serie A TIM" ? matches : []);
   }, [matches, selectedLeague]);
 
   const groupedMatches = useMemo(() => {
@@ -214,21 +222,26 @@ export default function RoomPage() {
     return groups;
   }, [filteredMatches]);
 
-  const handlePickAction = async (match: any, market: string, selection: string, odds: number) => {
-    const existing = picks.find((p) => p.match_id === match.id);
+  const isSelected = (matchId: string, market: string, sel: string) => {
+    return picks.some((p) => p.match_id === matchId && p.market === market && p.selection === sel && p.status !== "rejected");
+  };
 
-    if (existing && existing.selection === selection) {
+  const handlePickAction = async (match: any, market: string, selection: string, odds: number) => {
+    const existingSameSelection = picks.find((p) => p.match_id === match.id && p.market === market && p.selection === selection);
+
+    if (existingSameSelection) {
       if (betMode === "libera") {
-        removePick(existing.id);
+        removePick(existingSameSelection.id);
         return;
       } else {
-        showToast("⚠️ Quota già registrata.");
+        showToast("⚠️ Quota già registrata in votazione.");
         return;
       }
     }
 
-    if (existing) {
-      showToast("⚠️ C'è già un pronostico su questa gara!");
+    const existingMatchPick = picks.find((p) => p.match_id === match.id && p.market === market);
+    if (existingMatchPick) {
+      showToast(`⚠️ C'è già una giocata su questo mercato (${market})!`);
       return;
     }
 
@@ -325,10 +338,6 @@ export default function RoomPage() {
   const safeParticipants = Math.max(1, participantsCount);
   const stakePerHead = (stake / safeParticipants).toFixed(2);
   const winPerHead = (Number(potentialWin) / safeParticipants).toFixed(2);
-
-  const isSelected = (matchId: string, sel: string) => {
-    return picks.some((p) => p.match_id === matchId && p.selection === sel && p.status !== "rejected");
-  };
 
   const copyForWhatsApp = () => {
     const text = `🔥 BetSquad [${roomId}]\n` +
@@ -484,18 +493,17 @@ export default function RoomPage() {
   ];
 
   const competitions = [
-    { name: "Serie A TIM", flag: "🇮🇹", region: "Italia" },
-    { name: "Premier League", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿", region: "Inghilterra" },
-    { name: "LaLiga", flag: "🇪🇸", region: "Spagna" },
-    { name: "Bundesliga", flag: "🇩🇪", region: "Germania" },
-    { name: "Champions League", flag: "🇪🇺", region: "Europa" }
+    { name: "Serie A TIM", code: "IT", region: "Italia" },
+    { name: "Premier League", code: "EN", region: "Inghilterra" },
+    { name: "LaLiga", code: "ES", region: "Spagna" },
+    { name: "Bundesliga", code: "DE", region: "Germania" },
+    { name: "Champions League", code: "EU", region: "Europa" }
   ];
 
   return (
     <div className="min-h-screen bg-[var(--bg-main)] text-[var(--text-main)] pb-24 font-sans antialiased select-none">
       <canvas ref={canvasRef} className="hidden" />
 
-      {/* Toast Notifica riposizionato per non coprire nulla */}
       {toast && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-[#0084ff] text-white text-[11px] font-bold px-4 py-2 rounded-full shadow-2xl border border-white/20">
           {toast}
@@ -595,7 +603,7 @@ export default function RoomPage() {
       </div>
 
       {/* Tabs Principali */}
-      <div className="bg-[var(--surface-header)] border-b border-[var(--border-subtle)] px-2 flex text-xs font-bold uppercase tracking-wider overflow-x-auto no-scrollbar">
+      <div className="bg-[var(--surface-header)] border-b border-[var(--border-subtle)] px-3 flex text-xs font-bold uppercase tracking-wider overflow-x-auto no-scrollbar">
         <button
           onClick={() => setActiveTab("palinsesto")}
           className={`py-2 px-4 transition whitespace-nowrap border-b-2 cursor-pointer ${
@@ -630,7 +638,7 @@ export default function RoomPage() {
         </button>
       </div>
 
-      {/* SELETTORE COMPETIZIONI A SCORRIMENTO ORIZZONTALE PER MOBILE */}
+      {/* Selettore Competizioni Mobile a Scorrimento */}
       {activeTab === "palinsesto" && (
         <div className="md:hidden bg-[var(--surface-card)] border-b border-[var(--border-subtle)] px-2.5 py-2 overflow-x-auto flex gap-1.5 no-scrollbar">
           {competitions.map((comp) => (
@@ -643,24 +651,24 @@ export default function RoomPage() {
                   : "bg-[var(--surface-quote)] border-[var(--border-subtle)] text-[var(--text-muted)]"
               }`}
             >
-              <span>{comp.flag}</span>
+              <span className="font-mono text-[10px] uppercase font-bold bg-white/10 px-1 rounded">{comp.code}</span>
               <span>{comp.name}</span>
             </button>
           ))}
         </div>
       )}
 
-      <main className="p-2 sm:p-4 max-w-6xl mx-auto">
-        {/* Tab 1: Palinsesto Quote */}
+      {/* Main Layout */}
+      <main className="p-2 sm:p-4 w-full">
         {activeTab === "palinsesto" && (
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+          <div className="flex flex-col md:flex-row gap-3 items-start w-full">
             {/* SIDEBAR DESKTOP ALTRE COMPETIZIONI */}
-            <aside className="hidden md:block md:col-span-3 bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-3 h-fit">
+            <aside className="hidden md:block w-64 shrink-0 bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-3 shadow-sm">
               <div className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)] pb-2 mb-2 border-b border-[var(--border-subtle)] flex items-center justify-between">
                 <span>Altre Competizioni</span>
                 <span className="text-[10px] text-[#0084ff] font-bold">CALCIO</span>
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 {competitions.map((comp) => (
                   <button
                     key={comp.name}
@@ -672,7 +680,7 @@ export default function RoomPage() {
                     }`}
                   >
                     <span className="flex items-center gap-2">
-                      <span>{comp.flag}</span>
+                      <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/25">{comp.code}</span>
                       <span>{comp.name}</span>
                     </span>
                     <span className="text-[10px] opacity-75 font-mono">➔</span>
@@ -682,11 +690,12 @@ export default function RoomPage() {
             </aside>
 
             {/* TABELLA PALINSESTO */}
-            <div className="md:col-span-9 space-y-3">
-              {/* Barra Mercati Scommesse Ingrandita */}
+            <div className="flex-1 min-w-0 w-full space-y-3">
               <div className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shadow-sm">
                 <div className="flex items-center gap-2">
-                  <span className="text-lg">{competitions.find(c => c.name === selectedLeague)?.flag}</span>
+                  <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[#0084ff] text-white">
+                    {competitions.find(c => c.name === selectedLeague)?.code}
+                  </span>
                   <span className="text-xs font-bold uppercase text-white tracking-wide">{selectedLeague}</span>
                 </div>
 
@@ -752,7 +761,7 @@ export default function RoomPage() {
                                   <div className="grid grid-cols-3 gap-1.5 w-[190px] sm:w-[220px]">
                                     {(["1", "X", "2"] as const).map((lbl) => {
                                       const val = Number(m.odds1X2?.[lbl] || 2.0);
-                                      const selected = isSelected(m.id, lbl);
+                                      const selected = isSelected(m.id, "1X2", lbl);
                                       return (
                                         <button
                                           key={lbl}
@@ -775,7 +784,7 @@ export default function RoomPage() {
                                   <div className="grid grid-cols-3 gap-1.5 w-[190px] sm:w-[220px]">
                                     {(["1X", "12", "X2"] as const).map((lbl) => {
                                       const val = Number(m.oddsDC?.[lbl] || 1.35);
-                                      const selected = isSelected(m.id, lbl);
+                                      const selected = isSelected(m.id, "Doppia Chance", lbl);
                                       return (
                                         <button
                                           key={lbl}
@@ -798,7 +807,7 @@ export default function RoomPage() {
                                   <div className="grid grid-cols-2 gap-1.5 w-[170px] sm:w-[200px]">
                                     {(["Over 2.5", "Under 2.5"] as const).map((lbl) => {
                                       const val = Number(m.oddsUO?.[lbl] || 1.85);
-                                      const selected = isSelected(m.id, lbl);
+                                      const selected = isSelected(m.id, "Under/Over", lbl);
                                       return (
                                         <button
                                           key={lbl}
@@ -821,7 +830,7 @@ export default function RoomPage() {
                                   <div className="grid grid-cols-2 gap-1.5 w-[170px] sm:w-[200px]">
                                     {(["Goal", "NoGoal"] as const).map((lbl) => {
                                       const val = Number(m.oddsGG?.[lbl] || 1.8);
-                                      const selected = isSelected(m.id, lbl);
+                                      const selected = isSelected(m.id, "Goal/NoGoal", lbl);
                                       return (
                                         <button
                                           key={lbl}
@@ -844,7 +853,7 @@ export default function RoomPage() {
                                   <div className="grid grid-cols-3 gap-1.5 w-[190px] sm:w-[220px]">
                                     {(["1-3 Goal", "2-4 Goal", "2-5 Goal"] as const).map((lbl) => {
                                       const val = Number(m.oddsMG?.[lbl] || 1.45);
-                                      const selected = isSelected(m.id, lbl);
+                                      const selected = isSelected(m.id, "Multigoal", lbl);
                                       return (
                                         <button
                                           key={lbl}
@@ -877,7 +886,7 @@ export default function RoomPage() {
 
         {/* Tab 2: Votazioni */}
         {activeTab === "voti" && (
-          <div className="space-y-2">
+          <div className="max-w-4xl mx-auto space-y-2">
             {pending.length === 0 ? (
               <div className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-8 text-center text-xs text-[var(--text-muted)]">
                 Nessuna proposta in attesa di voto.
@@ -946,9 +955,9 @@ export default function RoomPage() {
           </div>
         )}
 
-        {/* Tab 3: Schedina Squad (Con Comparatore Integrato) */}
+        {/* Tab 3: Schedina Squad con Comparatore Bookmaker Integrato */}
         {activeTab === "schedina" && (
-          <div className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-3 sm:p-5 shadow-sm space-y-4">
+          <div className="max-w-4xl mx-auto bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-3 sm:p-5 shadow-sm space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-[var(--border-subtle)]">
               <span className="text-xs font-bold uppercase tracking-wider">Schedina ({confirmed.length})</span>
               <div className="flex items-center gap-1 bg-[var(--bg-main)] p-1 rounded border border-[var(--border-subtle)]">

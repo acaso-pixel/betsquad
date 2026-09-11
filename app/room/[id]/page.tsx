@@ -94,14 +94,26 @@ export default function RoomPage() {
         }
       });
 
+    // Fetch con normalizzazione rigida e ID univoco garantito
     fetch(`/api/odds?t=${Date.now()}`, { cache: "no-store" })
       .then((res) => res.json())
       .then((d) => {
         const rawList = Array.isArray(d.matches) ? d.matches : [];
-        const normalized = rawList.map((m: any) => ({
-          ...m,
-          league: m.league || "Serie A TIM"
-        }));
+        const normalized = rawList.map((m: any, index: number) => {
+          const homeStr = m.home || `Casa_${index}`;
+          const awayStr = m.away || `Trasferta_${index}`;
+          const safeId = m.id && String(m.id).trim().length > 0 
+            ? String(m.id) 
+            : `match_${homeStr}_${awayStr}`.toLowerCase().replace(/[^a-z0-9_]/g, "");
+
+          return {
+            ...m,
+            id: safeId,
+            home: homeStr,
+            away: awayStr,
+            league: m.league || "Serie A TIM"
+          };
+        });
         setMatches(normalized);
       })
       .catch(() => setMatches([]))
@@ -225,17 +237,15 @@ export default function RoomPage() {
     return picks.some((p) => p.match_id === matchId && p.selection === sel && p.status !== "rejected");
   };
 
-  // LOGICA CORRETTA:
-  // 1. Se clicchi la stessa identica quota -> la deseleziona e toglie.
-  // 2. Se cambi quota NELLO STESSO MERCATO (es. da 1 a X) -> aggiorna la giocata senza duplicare.
-  // 3. Se scegli un mercato DIVERSO dello stesso match (es. 1X2 + Under/Over) -> le tiene ENTRAMBE!
+  // GESTIONE SELEZIONE QUOTE FLUIDA E INDIPENDENTE
   const handlePickAction = async (match: any, market: string, selection: string, odds: number) => {
     const isDirect = betMode === "libera";
     const initialStatus = isDirect ? "confirmed" : "pending";
+    const safeMatchId = match.id;
 
-    // 1. Quota identica già attiva -> Deseleziona
+    // 1. Quota identica già attiva -> Deseleziona e rimuovi
     const existingSameSelection = picks.find(
-      (p) => p.match_id === match.id && p.selection === selection && p.status !== "rejected"
+      (p) => p.match_id === safeMatchId && p.selection === selection && p.status !== "rejected"
     );
 
     if (existingSameSelection) {
@@ -243,14 +253,14 @@ export default function RoomPage() {
         removePick(existingSameSelection.id);
         return;
       } else {
-        showToast("⚠️ Pronostico già inserito.");
+        showToast("⚠️ Pronostico già presente in votazione.");
         return;
       }
     }
 
-    // 2. Esiste già un pronostico sullo STESSO mercato per questo match -> Sostituisce solo quella quota
+    // 2. Esiste già un pronostico sullo STESSO mercato per QUESTO match -> Sostituisci solo quel mercato
     const existingMarketPick = picks.find(
-      (p) => p.match_id === match.id && p.market === market && p.status !== "rejected"
+      (p) => p.match_id === safeMatchId && p.market === market && p.status !== "rejected"
     );
 
     if (existingMarketPick) {
@@ -263,7 +273,7 @@ export default function RoomPage() {
       };
 
       setPicks((prev) => prev.map((p) => (p.id === existingMarketPick.id ? updatedPick : p)));
-      showToast(`🔄 Aggiornato ${market}: ${selection}`);
+      showToast(`🔄 Aggiornato: ${selection} (${market})`);
 
       try {
         await supabase
@@ -279,12 +289,12 @@ export default function RoomPage() {
       return;
     }
 
-    // 3. Nuovo pronostico (mercato diverso o match diverso) -> Aggiunge senza cancellare nulla
-    const tempId = `pick_${Date.now()}`;
+    // 3. Nuova selezione per questo match -> Inserisci normalmente senza toccare le altre partite
+    const tempId = `pick_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const newPick = {
       id: tempId,
       room_id: roomId,
-      match_id: match.id,
+      match_id: safeMatchId,
       match_label: `${match.home} - ${match.away}`,
       market,
       selection,
@@ -300,7 +310,7 @@ export default function RoomPage() {
 
     const { data, error } = await supabase.from("room_picks").insert({
       room_id: roomId,
-      match_id: match.id,
+      match_id: safeMatchId,
       match_label: newPick.match_label,
       market,
       selection,
@@ -538,6 +548,7 @@ export default function RoomPage() {
     <div className="min-h-screen bg-[var(--bg-main)] text-[var(--text-main)] pb-24 font-sans antialiased select-none">
       <canvas ref={canvasRef} className="hidden" />
 
+      {/* Toast Notifica */}
       {toast && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-[#0084ff] text-white text-[11px] font-bold px-4 py-2 rounded-full shadow-2xl border border-white/20">
           {toast}
@@ -780,7 +791,7 @@ export default function RoomPage() {
               </div>
             </aside>
 
-            {/* Tabella Palinsesto Quote */}
+            {/* Tabella Palinsesto */}
             <div className="flex-1 min-w-0 w-full space-y-3">
               <div className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shadow-sm">
                 <div className="flex items-center gap-2">
@@ -840,15 +851,15 @@ export default function RoomPage() {
                           });
 
                           return (
-                            <div key={m.id} className="p-3 flex items-center justify-between gap-2">
+                            <div key={m.id} className="p-3 flex items-center justify-between gap-2 relative">
                               <div className="min-w-0 flex-1 pr-2">
                                 <span className="text-[10px] font-mono text-[var(--text-muted)] block mb-0.5">{timeStr}</span>
                                 <div className="text-xs font-bold truncate">{m.home}</div>
                                 <div className="text-xs font-bold truncate">{m.away}</div>
                               </div>
 
-                              {/* TASTI QUOTE UNIFICATI E CON GRIGLIA AD ALTA REATTIVITÀ TOUCH */}
-                              <div className="shrink-0">
+                              {/* QUOTE CLICCABILI AL 100% SU TUTTE LE PARTITE */}
+                              <div className="shrink-0 relative z-10">
                                 {marketFilter === "1X2" && (
                                   <div className="grid grid-cols-3 gap-1.5 w-[190px] sm:w-[220px]">
                                     {(["1", "X", "2"] as const).map((lbl) => {
@@ -858,11 +869,14 @@ export default function RoomPage() {
                                         <button
                                           key={lbl}
                                           type="button"
-                                          onClick={() => handlePickAction(m, "1X2", lbl, val)}
-                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer active:scale-95 ${
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handlePickAction(m, "1X2", lbl, val);
+                                          }}
+                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer active:scale-95 select-none ${
                                             selected
                                               ? "bg-[#0084ff] border-white text-white shadow-sm font-black"
-                                              : "bg-[var(--surface-quote)] active:bg-[var(--surface-quote-hover)] border-[var(--border-subtle)] text-[var(--quote-val)]"
+                                              : "bg-[var(--surface-quote)] hover:bg-[var(--surface-quote-hover)] active:bg-[#0084ff]/20 border-[var(--border-subtle)] text-[var(--quote-val)]"
                                           }`}
                                         >
                                           <span className="text-[9px] text-[var(--text-muted)] leading-none">{lbl}</span>
@@ -882,11 +896,14 @@ export default function RoomPage() {
                                         <button
                                           key={lbl}
                                           type="button"
-                                          onClick={() => handlePickAction(m, "Doppia Chance", lbl, val)}
-                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer active:scale-95 ${
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handlePickAction(m, "Doppia Chance", lbl, val);
+                                          }}
+                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer active:scale-95 select-none ${
                                             selected
                                               ? "bg-[#0084ff] border-white text-white shadow-sm font-black"
-                                              : "bg-[var(--surface-quote)] active:bg-[var(--surface-quote-hover)] border-[var(--border-subtle)] text-[var(--quote-val)]"
+                                              : "bg-[var(--surface-quote)] hover:bg-[var(--surface-quote-hover)] active:bg-[#0084ff]/20 border-[var(--border-subtle)] text-[var(--quote-val)]"
                                           }`}
                                         >
                                           <span className="text-[9px] text-[var(--text-muted)] leading-none">{lbl}</span>
@@ -906,11 +923,14 @@ export default function RoomPage() {
                                         <button
                                           key={lbl}
                                           type="button"
-                                          onClick={() => handlePickAction(m, "Under/Over", lbl, val)}
-                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer active:scale-95 ${
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handlePickAction(m, "Under/Over", lbl, val);
+                                          }}
+                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer active:scale-95 select-none ${
                                             selected
                                               ? "bg-[#0084ff] border-white text-white shadow-sm font-black"
-                                              : "bg-[var(--surface-quote)] active:bg-[var(--surface-quote-hover)] border-[var(--border-subtle)] text-[var(--quote-val)]"
+                                              : "bg-[var(--surface-quote)] hover:bg-[var(--surface-quote-hover)] active:bg-[#0084ff]/20 border-[var(--border-subtle)] text-[var(--quote-val)]"
                                           }`}
                                         >
                                           <span className="text-[9px] text-[var(--text-muted)] leading-none">{lbl}</span>
@@ -930,11 +950,14 @@ export default function RoomPage() {
                                         <button
                                           key={lbl}
                                           type="button"
-                                          onClick={() => handlePickAction(m, "Goal/NoGoal", lbl, val)}
-                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer active:scale-95 ${
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handlePickAction(m, "Goal/NoGoal", lbl, val);
+                                          }}
+                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer active:scale-95 select-none ${
                                             selected
                                               ? "bg-[#0084ff] border-white text-white shadow-sm font-black"
-                                              : "bg-[var(--surface-quote)] active:bg-[var(--surface-quote-hover)] border-[var(--border-subtle)] text-[var(--quote-val)]"
+                                              : "bg-[var(--surface-quote)] hover:bg-[var(--surface-quote-hover)] active:bg-[#0084ff]/20 border-[var(--border-subtle)] text-[var(--quote-val)]"
                                           }`}
                                         >
                                           <span className="text-[9px] text-[var(--text-muted)] leading-none">{lbl}</span>
@@ -954,11 +977,14 @@ export default function RoomPage() {
                                         <button
                                           key={lbl}
                                           type="button"
-                                          onClick={() => handlePickAction(m, "Multigoal", lbl, val)}
-                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer active:scale-95 ${
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handlePickAction(m, "Multigoal", lbl, val);
+                                          }}
+                                          className={`h-10 flex flex-col items-center justify-center rounded-md transition border cursor-pointer active:scale-95 select-none ${
                                             selected
                                               ? "bg-[#0084ff] border-white text-white shadow-sm font-black"
-                                              : "bg-[var(--surface-quote)] active:bg-[var(--surface-quote-hover)] border-[var(--border-subtle)] text-[var(--quote-val)]"
+                                              : "bg-[var(--surface-quote)] hover:bg-[var(--surface-quote-hover)] active:bg-[#0084ff]/20 border-[var(--border-subtle)] text-[var(--quote-val)]"
                                           }`}
                                         >
                                           <span className="text-[9px] text-[var(--text-muted)] leading-none">{lbl}</span>
@@ -1052,7 +1078,7 @@ export default function RoomPage() {
           </div>
         )}
 
-        {/* Tab 3: Schedina Squad con Regolamento Completo */}
+        {/* Tab 3: Schedina Squad */}
         {activeTab === "schedina" && (
           <div className="max-w-4xl mx-auto bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-3 sm:p-5 shadow-sm space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-[var(--border-subtle)]">
@@ -1121,7 +1147,6 @@ export default function RoomPage() {
                     <span className="text-2xl font-mono font-black text-emerald-500">{potentialWin} €</span>
                   </div>
 
-                  {/* Avviso Superamento 50.000 € */}
                   {isCapped && (
                     <div className="bg-amber-500/15 border border-amber-500/30 text-amber-400 p-2.5 rounded-lg text-xs leading-relaxed font-semibold flex items-center gap-2">
                       <span className="text-base">⚠️</span>
@@ -1129,7 +1154,7 @@ export default function RoomPage() {
                     </div>
                   )}
 
-                  {/* Comparatore Bookmaker */}
+                  {/* Comparatore Bookmaker Cliccabile */}
                   <div className="mt-3 pt-3 border-t border-[var(--border-subtle)]">
                     <span className="text-[11px] font-bold text-[var(--text-muted)] uppercase block mb-2">
                       Confronto Payout Bookmaker ADM ({stake}€):
@@ -1221,7 +1246,7 @@ export default function RoomPage() {
             ) : (
               <div className="divide-y divide-[var(--border-subtle)] py-1.5">
                 {confirmed.map((c) => (
-                  <div key={c.id} className="py-2 flex items-center justify-between text-xs">
+                  <div key={c.id} className="py-1.5 flex items-center justify-between text-xs">
                     <div className="pr-2 truncate">
                       <div className="font-bold truncate">{c.match_label}</div>
                       <div className="text-[10px] text-[#0084ff] font-semibold">{c.selection}</div>

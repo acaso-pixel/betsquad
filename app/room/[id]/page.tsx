@@ -1315,7 +1315,6 @@ export default function RoomPage() {
                 <button onClick={() => setShowRulesModal(true)} className="text-[10px] text-[#0084ff] underline cursor-pointer">Regolamento ADM</button>
               </div>
               
-              {/* Selezione Puntata (Bottoni rapidi + Input Libero senza 1€) */}
               <div className="flex items-center gap-1.5 bg-[var(--bg-main)] p-1 rounded border border-[var(--border-subtle)]">
                 <span className="text-[10px] text-[var(--text-muted)]">Puntata:</span>
                 {[5, 10, 20, 50].map((val) => (
@@ -1368,7 +1367,7 @@ export default function RoomPage() {
                   {bonusPct > 0 && (
                     <div className="flex justify-between text-amber-500">
                       <span>Bonus Multipla ({qualifyingEvents} eventi ≥ 1.25: +{bonusPct}%):</span>
-                      <span className="font-mono font-bold">+{((Number(potentialWin) - baseWin)).toFixed(2)} €</span>
+                      <span className="font-mono font-bold">+{((Number(potentialWin) - (Number(stake) * Number(totalOdds)))).toFixed(2)} €</span>
                     </div>
                   )}
 
@@ -1509,7 +1508,6 @@ export default function RoomPage() {
                   </div>
 
                   <div className="pt-2 border-t border-[var(--border-subtle)] space-y-2 text-xs">
-                    {/* Puntata Libera personalizzata nell'Anteprima (Senza 1€) */}
                     <div className="flex items-center justify-between bg-[var(--surface-sub)] p-2 rounded gap-2">
                       <span className="text-[var(--text-muted)] uppercase font-bold text-[10px]">Puntata (€):</span>
                       <div className="flex items-center gap-1">

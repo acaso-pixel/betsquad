@@ -94,7 +94,6 @@ export default function RoomPage() {
         }
       });
 
-    // Fetch con normalizzazione rigida e ID univoco garantito
     fetch(`/api/odds?t=${Date.now()}`, { cache: "no-store" })
       .then((res) => res.json())
       .then((d) => {
@@ -232,18 +231,16 @@ export default function RoomPage() {
     return groups;
   }, [filteredMatches]);
 
-  // CONTROLLO PRECISO: verifica sia il match_id sia la selezione esatta
   const isSelected = (matchId: string, sel: string) => {
     return picks.some((p) => p.match_id === matchId && p.selection === sel && p.status !== "rejected");
   };
 
-  // GESTIONE SELEZIONE QUOTE FLUIDA E INDIPENDENTE
   const handlePickAction = async (match: any, market: string, selection: string, odds: number) => {
     const isDirect = betMode === "libera";
     const initialStatus = isDirect ? "confirmed" : "pending";
     const safeMatchId = match.id;
 
-    // 1. Quota identica già attiva -> Deseleziona e rimuovi
+    // Deselezione
     const existingSameSelection = picks.find(
       (p) => p.match_id === safeMatchId && p.selection === selection && p.status !== "rejected"
     );
@@ -253,12 +250,12 @@ export default function RoomPage() {
         removePick(existingSameSelection.id);
         return;
       } else {
-        showToast("⚠️ Pronostico già presente in votazione.");
+        showToast("⚠️ Pronostico già inserito.");
         return;
       }
     }
 
-    // 2. Esiste già un pronostico sullo STESSO mercato per QUESTO match -> Sostituisci solo quel mercato
+    // Sostituzione nello stesso mercato
     const existingMarketPick = picks.find(
       (p) => p.match_id === safeMatchId && p.market === market && p.status !== "rejected"
     );
@@ -289,7 +286,7 @@ export default function RoomPage() {
       return;
     }
 
-    // 3. Nuova selezione per questo match -> Inserisci normalmente senza toccare le altre partite
+    // Nuova selezione
     const tempId = `pick_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const newPick = {
       id: tempId,
@@ -308,22 +305,23 @@ export default function RoomPage() {
     setPicks((prev) => [...prev, newPick]);
     showToast(isDirect ? `✅ Aggiunto: ${selection}` : `🗳️ Proposta: ${selection}`);
 
-    const { data, error } = await supabase.from("room_picks").insert({
-      room_id: roomId,
-      match_id: safeMatchId,
-      match_label: newPick.match_label,
-      market,
-      selection,
-      odds,
-      proposed_by: nick,
-      votes: newPick.votes,
-      reactions: {},
-      status: initialStatus,
-    }).select().single();
+    try {
+      const { data } = await supabase.from("room_picks").insert({
+        room_id: roomId,
+        match_id: safeMatchId,
+        match_label: newPick.match_label,
+        market,
+        selection,
+        odds,
+        proposed_by: nick,
+        votes: newPick.votes,
+        status: initialStatus,
+      }).select().single();
 
-    if (data && !error) {
-      setPicks((prev) => prev.map((p) => (p.id === tempId ? data : p)));
-    }
+      if (data) {
+        setPicks((prev) => prev.map((p) => (p.id === tempId ? data : p)));
+      }
+    } catch {}
   };
 
   const votePick = async (pick: any, val: number) => {
@@ -415,6 +413,7 @@ export default function RoomPage() {
     ctx.fill();
   };
 
+  // Card grafica con gestione layout e nessun testo sovrapposto
   const exportStoryCard = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -482,8 +481,9 @@ export default function RoomPage() {
         ctx.fillText(`${idx + 1}. ${label}`, 120, yPos);
 
         ctx.fillStyle = "#0084ff";
-        ctx.font = "bold 32px sans-serif";
-        ctx.fillText(`Pronostico: ${c.selection} (${c.market})`, 120, yPos + 44);
+        ctx.font = "bold 30px sans-serif";
+        const shortMarket = c.market.length > 12 ? c.market.substring(0, 10) + ".." : c.market;
+        ctx.fillText(`Pronostico: ${c.selection} [${shortMarket}]`, 120, yPos + 44);
 
         ctx.textAlign = "right";
         ctx.fillStyle = "#f59e0b";
@@ -545,7 +545,7 @@ export default function RoomPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-[var(--bg-main)] text-[var(--text-main)] pb-24 font-sans antialiased select-none">
+    <div className="min-h-screen bg-[var(--bg-main)] text-[var(--text-main)] pb-36 font-sans antialiased select-none">
       <canvas ref={canvasRef} className="hidden" />
 
       {/* Toast Notifica */}
@@ -578,7 +578,7 @@ export default function RoomPage() {
             <div className="space-y-3 text-xs leading-relaxed text-[var(--text-muted)]">
               <div>
                 <h4 className="font-bold text-white uppercase text-[11px]">1. Importi di Puntata e Vincita Massima</h4>
-                <p>La puntata minima ammessa è di <strong>1,00 €</strong>. Il massimale di vincita per singolo biglietto (singola o multipla) è fissato a <strong>€ 50.000,00</strong> a norma di legge ADM.</p>
+                <p>La puntata minima ammessa è di <strong>1,00 €</strong>. Il massimale di vincita per singolo biglietto è fissato a <strong>€ 50.000,00</strong> a norma di legge ADM.</p>
               </div>
               <div>
                 <h4 className="font-bold text-white uppercase text-[11px]">2. Selezione Mercati Multipli</h4>
@@ -833,7 +833,7 @@ export default function RoomPage() {
                   Nessun match in programma per {selectedLeague}.
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-3 pb-8">
                   {Object.entries(groupedMatches).map(([dateLabel, matchList]) => (
                     <div key={dateLabel} className="bg-[var(--surface-header)] border border-[var(--border-subtle)] rounded-lg overflow-hidden shadow-sm">
                       <div className="bg-[var(--surface-sub)] px-3 py-1.5 text-xs font-bold flex items-center justify-between border-b border-[var(--border-subtle)]">
@@ -858,7 +858,6 @@ export default function RoomPage() {
                                 <div className="text-xs font-bold truncate">{m.away}</div>
                               </div>
 
-                              {/* QUOTE CLICCABILI AL 100% SU TUTTE LE PARTITE */}
                               <div className="shrink-0 relative z-10">
                                 {marketFilter === "1X2" && (
                                   <div className="grid grid-cols-3 gap-1.5 w-[190px] sm:w-[220px]">
@@ -1185,7 +1184,7 @@ export default function RoomPage() {
                     </div>
                   </div>
 
-                  {/* Divisione Spesa a Testa da 1 a 20 */}
+                  {/* Divisione Spesa a Testa */}
                   <div className="mt-3 pt-3 border-t border-[var(--border-subtle)] bg-[var(--surface-sub)] p-3 rounded-lg">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-[11px] font-bold text-[var(--text-muted)] uppercase">Partecipanti alla spesa:</span>
@@ -1230,7 +1229,9 @@ export default function RoomPage() {
             }`}
           >
             <div className="flex items-center justify-between pb-2 border-b border-[var(--border-subtle)]">
-              <span className="text-xs font-bold uppercase tracking-wider">Schedina Rapida ({confirmed.length})</span>
+              <span className="text-xs font-bold uppercase tracking-wider">
+                {betMode === "voto" ? `Voti & Proposte (${picks.length})` : `Schedina Rapida (${confirmed.length})`}
+              </span>
               <button
                 onClick={() => setIsSheetOpen(false)}
                 className="text-xs font-bold text-[var(--text-muted)] hover:text-white px-2 py-0.5 rounded bg-[var(--surface-quote)] cursor-pointer"
@@ -1239,13 +1240,13 @@ export default function RoomPage() {
               </button>
             </div>
 
-            {confirmed.length === 0 ? (
+            {(betMode === "voto" ? picks : confirmed).length === 0 ? (
               <div className="py-6 text-center text-xs text-[var(--text-muted)]">
-                Schedina vuota. Clicca sulle quote in pagina per aggiungerle.
+                Nessuna giocata presente. Clicca sulle quote in pagina per aggiungerle.
               </div>
             ) : (
               <div className="divide-y divide-[var(--border-subtle)] py-1.5">
-                {confirmed.map((c) => (
+                {(betMode === "voto" ? picks : confirmed).map((c) => (
                   <div key={c.id} className="py-1.5 flex items-center justify-between text-xs">
                     <div className="pr-2 truncate">
                       <div className="font-bold truncate">{c.match_label}</div>
@@ -1278,11 +1279,11 @@ export default function RoomPage() {
                     <button
                       onClick={() => {
                         setIsSheetOpen(false);
-                        setActiveTab("schedina");
+                        setActiveTab(betMode === "voto" ? "voti" : "schedina");
                       }}
                       className="w-full h-10 bg-[#0084ff] hover:bg-[#0073e6] active:bg-[#0060c0] text-white text-xs font-bold uppercase tracking-wider rounded-lg flex items-center justify-center gap-1 cursor-pointer shadow-md transition"
                     >
-                      <span>Vai a Schedina Squad</span>
+                      <span>{betMode === "voto" ? "Vai a Votazioni" : "Vai a Schedina Squad"}</span>
                       <span>➔</span>
                     </button>
                   </div>
@@ -1295,9 +1296,9 @@ export default function RoomPage() {
             onClick={() => setIsSheetOpen(!isSheetOpen)}
             className="pointer-events-auto h-12 px-5 rounded-full bg-[#0084ff] hover:bg-[#0073e6] active:bg-[#0060c0] text-white font-black text-xs uppercase tracking-wider shadow-2xl flex items-center gap-2.5 cursor-pointer border border-white/20 transition-transform active:scale-95"
           >
-            <span>SCHEDINA</span>
+            <span>{betMode === "voto" ? "VOTAZIONI" : "SCHEDINA"}</span>
             <span className="px-2 py-0.5 rounded-full bg-white/25 text-xs font-mono">
-              {confirmed.length}
+              {betMode === "voto" ? picks.length : confirmed.length}
             </span>
             <span className="text-xs">{isSheetOpen ? "▼" : "▲"}</span>
           </button>

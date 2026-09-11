@@ -1314,9 +1314,11 @@ export default function RoomPage() {
                 <span className="text-xs font-bold uppercase tracking-wider">Schedina Squad ({confirmed.length} eventi)</span>
                 <button onClick={() => setShowRulesModal(true)} className="text-[10px] text-[#0084ff] underline cursor-pointer">Regolamento ADM</button>
               </div>
-              <div className="flex items-center gap-1 bg-[var(--bg-main)] p-1 rounded border border-[var(--border-subtle)]">
+              
+              {/* Selezione Puntata (Bottoni rapidi + Input Libero senza 1€) */}
+              <div className="flex items-center gap-1.5 bg-[var(--bg-main)] p-1 rounded border border-[var(--border-subtle)]">
                 <span className="text-[10px] text-[var(--text-muted)]">Puntata:</span>
-                {[1, 2, 5, 10, 20, 50].map((val) => (
+                {[5, 10, 20, 50].map((val) => (
                   <button
                     key={val}
                     onClick={() => setStake(val)}
@@ -1325,6 +1327,15 @@ export default function RoomPage() {
                     {val}€
                   </button>
                 ))}
+                <input
+                  type="number"
+                  min="1"
+                  max="50000"
+                  value={stake}
+                  onChange={(e) => setStake(Math.max(1, Number(e.target.value)))}
+                  className="w-14 h-6 text-center bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded text-xs font-bold text-white focus:outline-none focus:border-[#0084ff]"
+                  title="Inserisci importo libero"
+                />
               </div>
             </div>
 
@@ -1459,7 +1470,6 @@ export default function RoomPage() {
         )}
       </main>
 
-      {/* Widget Schedina / Anteprima a Larghezza Finestra */}
       {activeTab !== "schedina" && (
         <div className="fixed bottom-3 right-3 left-3 sm:left-auto sm:right-6 z-40 flex flex-col items-center sm:items-end pointer-events-none">
           {isSheetOpen && (
@@ -1498,11 +1508,11 @@ export default function RoomPage() {
                     ))}
                   </div>
 
-                  {/* Selezione Puntata e Partecipanti direttamente nell'anteprima */}
                   <div className="pt-2 border-t border-[var(--border-subtle)] space-y-2 text-xs">
-                    <div className="flex items-center justify-between bg-[var(--surface-sub)] p-2 rounded">
+                    {/* Puntata Libera personalizzata nell'Anteprima (Senza 1€) */}
+                    <div className="flex items-center justify-between bg-[var(--surface-sub)] p-2 rounded gap-2">
                       <span className="text-[var(--text-muted)] uppercase font-bold text-[10px]">Puntata (€):</span>
-                      <div className="flex gap-1">
+                      <div className="flex items-center gap-1">
                         {[5, 10, 20, 50].map((val) => (
                           <button
                             key={val}
@@ -1512,6 +1522,15 @@ export default function RoomPage() {
                             {val}€
                           </button>
                         ))}
+                        <input
+                          type="number"
+                          min="1"
+                          max="50000"
+                          value={stake}
+                          onChange={(e) => setStake(Math.max(1, Number(e.target.value)))}
+                          className="w-12 h-6 text-center bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded text-xs font-bold text-white focus:outline-none focus:border-[#0084ff]"
+                          title="Inserisci importo libero"
+                        />
                       </div>
                     </div>
 
@@ -1559,14 +1578,13 @@ export default function RoomPage() {
             </div>
           )}
 
-          {/* Pulsante Anteprima Schedina largo quanto la finestra su mobile e dimensionato su desktop */}
           <button
             type="button"
             onClick={() => setIsSheetOpen((prev) => !prev)}
             className="pointer-events-auto w-full sm:w-[380px] h-12 px-5 rounded-xl sm:rounded-full bg-[#0084ff] hover:bg-[#0073e6] active:bg-[#0060c0] text-white font-black text-xs uppercase tracking-wider shadow-2xl flex items-center justify-between cursor-pointer border border-white/20 transition-transform active:scale-95"
           >
             <div className="flex items-center gap-2">
-              <span>ANTRIPRIMA SCHEDINA</span>
+              <span>ANTEPRIMA SCHEDINA</span>
               <span className="px-2 py-0.5 rounded-full bg-white/25 text-xs font-mono">
                 {activeSheetItems.length}
               </span>

@@ -518,15 +518,22 @@ export default function RoomPage() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    canvas.width = 1080;
-    canvas.height = 1920;
+    const itemsCount = activeSheetItems.length;
+    const headerHeight = 350;
+    const itemHeight = 120;
+    const footerHeight = 420;
+    const padding = 160;
+    const dynamicHeight = Math.max(1920, headerHeight + (itemsCount * itemHeight) + footerHeight + padding);
 
-    const grad = ctx.createLinearGradient(0, 0, 0, 1920);
+    canvas.width = 1080;
+    canvas.height = dynamicHeight;
+
+    const grad = ctx.createLinearGradient(0, 0, 0, dynamicHeight);
     grad.addColorStop(0, "#070c14");
     grad.addColorStop(0.5, "#0e1824");
     grad.addColorStop(1, "#05080d");
     ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 1080, 1920);
+    ctx.fillRect(0, 0, 1080, dynamicHeight);
 
     ctx.save();
     ctx.font = "900 64px sans-serif";
@@ -561,16 +568,18 @@ export default function RoomPage() {
     ctx.fillText("SCHEDINA DEL GIORNO", 1080 / 2, 280);
     ctx.restore();
 
+    const boxY = 350;
+    const boxH = (itemsCount * itemHeight) + 80;
     ctx.fillStyle = "rgba(22, 36, 54, 0.85)";
-    drawRoundedRect(ctx, 80, 330, 920, 1020, 28);
+    drawRoundedRect(ctx, 80, boxY, 920, boxH, 28);
 
-    let yPos = 420;
-    if (activeSheetItems.length === 0) {
+    let yPos = boxY + 70;
+    if (itemsCount === 0) {
       ctx.fillStyle = "#94a3b8";
       ctx.font = "italic 40px sans-serif";
       ctx.fillText("Nessun pronostico inserito", 140, yPos);
     } else {
-      activeSheetItems.slice(0, 8).forEach((c, idx) => {
+      activeSheetItems.forEach((c, idx) => {
         ctx.textAlign = "left";
         ctx.textBaseline = "alphabetic";
         ctx.fillStyle = "#ffffff";
@@ -586,39 +595,42 @@ export default function RoomPage() {
         ctx.textAlign = "right";
         ctx.fillStyle = "#f59e0b";
         ctx.font = "900 38px monospace";
-        ctx.fillText(`@${Number(c.odds).toFixed(2)}`, 950, yPos + 25);
+        ctx.fillText(`${Number(c.odds).toFixed(2)}`, 950, yPos + 25);
 
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(120, yPos + 80);
-        ctx.lineTo(960, yPos + 80);
-        ctx.stroke();
+        if (idx < itemsCount - 1) {
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(120, yPos + 80);
+          ctx.lineTo(960, yPos + 80);
+          ctx.stroke();
+        }
 
-        yPos += 120;
+        yPos += itemHeight;
       });
     }
 
+    const footerY = boxY + boxH + 40;
     ctx.fillStyle = "#162436";
-    drawRoundedRect(ctx, 80, 1400, 920, 420, 28);
+    drawRoundedRect(ctx, 80, footerY, 920, 380, 28);
 
     ctx.textAlign = "left";
     ctx.fillStyle = "#94a3b8";
     ctx.font = "bold 32px sans-serif";
-    ctx.fillText("QUOTA TOTALE", 140, 1480);
-    ctx.fillText("PUNTATA", 660, 1480);
+    ctx.fillText("QUOTA TOTALE", 140, footerY + 80);
+    ctx.fillText("PUNTATA", 660, footerY + 80);
 
     ctx.fillStyle = "#ffffff";
     ctx.font = "900 58px monospace";
-    ctx.fillText(`@${totalOdds}`, 140, 1560);
-    ctx.fillText(`${stake} €`, 660, 1560);
+    ctx.fillText(`${totalOdds}`, 140, footerY + 160);
+    ctx.fillText(`${stake} €`, 660, footerY + 160);
 
     ctx.fillStyle = "#10b981";
     ctx.font = "bold 36px sans-serif";
-    ctx.fillText("POTENZIALE VINCITA:", 140, 1670);
+    ctx.fillText("POTENZIALE VINCITA:", 140, footerY + 260);
 
     ctx.font = "900 96px monospace";
-    ctx.fillText(`${potentialWin} €`, 140, 1780);
+    ctx.fillText(`${potentialWin} €`, 140, footerY + 360);
 
     const dataUrl = canvas.toDataURL("image/png");
     const link = document.createElement("a");

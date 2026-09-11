@@ -32,7 +32,6 @@ export default function RoomPage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const channelRef = useRef<any>(null);
 
-  // Ref sincronizzato per evitare stale closures
   const picksRef = useRef<any[]>([]);
   useEffect(() => {
     picksRef.current = picks;
@@ -80,12 +79,13 @@ export default function RoomPage() {
 
     const abortController = new AbortController();
 
+    // Inizializza stanza e garantisce esistenza record per FK
     supabase
       .from("rooms")
       .select("*")
       .eq("id", roomId)
       .maybeSingle()
-      .then(({ data }) => {
+      .then(async ({ data }) => {
         if (data) {
           setRoomData(data);
           const nameVal = data.name || `Schedina #${roomId}`;
@@ -99,6 +99,14 @@ export default function RoomPage() {
           const fallback = `Schedina #${roomId}`;
           setRoomName(fallback);
           setTempRoomName(fallback);
+          try {
+            await supabase.from("rooms").upsert({
+              id: roomId,
+              name: fallback,
+              host_id: savedNick,
+              bet_mode: "libera",
+            });
+          } catch {}
         }
       });
 
@@ -249,6 +257,7 @@ export default function RoomPage() {
     return picks.some((p) => p.match_id === matchId && p.selection === sel && p.status !== "rejected");
   }, [picks]);
 
+  // Gestione selezioni con inserimento resiliente
   const handlePickAction = async (match: any, market: string, selection: string, odds: number) => {
     const isDirect = betMode === "libera";
     const initialStatus = isDirect ? "confirmed" : "pending";
@@ -264,12 +273,12 @@ export default function RoomPage() {
       if (betMode === "libera") {
         removePick(existingSameSelection.id);
       } else {
-        showToast("⚠️ Pronostico già proposto.");
+        showToast("⚠️ Pronostico già presente.");
       }
       return;
     }
 
-    // 2. Sostituzione nello stesso mercato se presente
+    // 2. Sostituzione nello stesso mercato
     const existingMarketPick = currentPicks.find(
       (p) => p.match_id === safeMatchId && p.market === market && p.status !== "rejected"
     );
@@ -300,7 +309,7 @@ export default function RoomPage() {
       return;
     }
 
-    // 3. Inserimento nuovo pick
+    // 3. Inserimento nuovo pick con fallback locale (non si cancella se Supabase ha un'anomalia)
     const tempId = `pick_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const newPick = {
       id: tempId,
@@ -315,6 +324,7 @@ export default function RoomPage() {
       status: initialStatus,
     };
 
+    // Aggiunta immediata nello stato locale
     setPicks((prev) => [...prev, newPick]);
     showToast(isDirect ? `✅ Aggiunto: ${selection}` : `🗳️ Proposta: ${selection}`);
 
@@ -327,19 +337,14 @@ export default function RoomPage() {
         selection,
         odds,
         proposed_by: nick,
-        votes: newPick.votes,
         status: initialStatus,
       }).select().single();
 
-      if (error) {
-        setPicks((prev) => prev.filter((p) => p.id !== tempId));
-        showToast("❌ Errore durante il salvataggio");
-      } else if (data) {
+      if (!error && data) {
         setPicks((prev) => prev.map((p) => (p.id === tempId ? data : p)));
       }
     } catch {
-      setPicks((prev) => prev.filter((p) => p.id !== tempId));
-      showToast("❌ Errore di connessione");
+      // Mantiene comunque il pronostico in locale
     }
   };
 
@@ -355,7 +360,9 @@ export default function RoomPage() {
     if (down >= 2 && down > up) status = "rejected";
 
     setPicks((prev) => prev.map((p) => (p.id === pick.id ? { ...p, votes: currentVotes, status } : p)));
-    await supabase.from("room_picks").update({ votes: currentVotes, status }).eq("id", pick.id);
+    try {
+      await supabase.from("room_picks").update({ votes: currentVotes, status }).eq("id", pick.id);
+    } catch {}
   };
 
   const reactPick = async (pick: any, emoji: string) => {
@@ -377,7 +384,9 @@ export default function RoomPage() {
 
   const removePick = async (id: string) => {
     setPicks((prev) => prev.filter((p) => p.id !== id));
-    await supabase.from("room_picks").delete().eq("id", id);
+    try {
+      await supabase.from("room_picks").delete().eq("id", id);
+    } catch {}
     showToast("🗑️ Quota rimossa");
   };
 
@@ -876,7 +885,6 @@ export default function RoomPage() {
                                 <div className="text-xs font-bold truncate">{m.away}</div>
                               </div>
 
-                              {/* QUOTE CLICCABILI SENZA ALCUNA INTERFERENZA */}
                               <div className="shrink-0 relative z-10">
                                 {marketFilter === "1X2" && (
                                   <div className="grid grid-cols-3 gap-1.5 w-[190px] sm:w-[220px]">
@@ -1237,10 +1245,9 @@ export default function RoomPage() {
         )}
       </main>
 
-      {/* RISOLUZIONE DEFINITIVA: SE CHIUSO NON ESISTE NEL DOM -> ZERO BLOCCHI SU PARMA/JUVENTUS/MILAN */}
+      {/* Widget NovaJackpot: Nessun elemento nel DOM se chiuso */}
       {activeTab !== "schedina" && (
         <div className="fixed bottom-3 right-3 sm:right-6 z-40 flex flex-col items-end pointer-events-none">
-          {/* Se isSheetOpen è false, questo div non viene renderizzato: zero collisioni sui click */}
           {isSheetOpen && (
             <div
               className="w-[calc(100vw-24px)] max-w-[340px] sm:max-w-[380px] bg-[var(--surface-card)] border border-[var(--border-strong)] rounded-xl shadow-2xl p-3.5 mb-2 pointer-events-auto max-h-[65vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200"

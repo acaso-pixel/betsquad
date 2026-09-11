@@ -294,7 +294,6 @@ export default function RoomPage() {
     showToast("📋 Schedina copiata per WhatsApp!");
   };
 
-  // Helper disegno rettangoli arrotondati compatibile 100% universale
   const drawRoundedRect = (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) => {
     ctx.beginPath();
     ctx.moveTo(x + radius, y);
@@ -319,100 +318,100 @@ export default function RoomPage() {
     canvas.width = 1080;
     canvas.height = 1920;
 
-    // Gradient di sfondo
     const grad = ctx.createLinearGradient(0, 0, 0, 1920);
-    grad.addColorStop(0, "#0b141f");
-    grad.addColorStop(0.5, "#111d2b");
-    grad.addColorStop(1, "#070b11");
+    grad.addColorStop(0, "#070c14");
+    grad.addColorStop(0.5, "#0e1824");
+    grad.addColorStop(1, "#05080d");
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 1080, 1920);
 
-    // Header Badge BetSquad
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    const pillW = 440;
+    const pillH = 100;
+    const pillX = (1080 - pillW) / 2;
+    const pillY = 110;
     ctx.fillStyle = "#0084ff";
-    drawRoundedRect(ctx, 80, 100, 240, 70, 16);
+    drawRoundedRect(ctx, pillX, pillY, pillW, pillH, 24);
 
     ctx.fillStyle = "#ffffff";
-    ctx.font = "900 36px sans-serif";
-    ctx.fillText("BETSQUAD", 98, 148);
+    ctx.font = "900 56px sans-serif";
+    ctx.fillText("BETSQUAD", 1080 / 2, pillY + pillH / 2);
 
-    ctx.fillStyle = "#94a3b8";
-    ctx.font = "600 30px monospace";
-    ctx.fillText(`ROOM // ${roomId}`, 350, 148);
+    ctx.restore();
 
-    // Titolo
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 60px sans-serif";
-    ctx.fillText("MULTIPLA DELLA SQUAD", 80, 260);
+    ctx.font = "bold 58px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("SCHEDINA DEL GIORNO", 1080 / 2, 280);
+    ctx.textAlign = "left";
 
-    // Card Match
     ctx.fillStyle = "rgba(22, 36, 54, 0.85)";
-    drawRoundedRect(ctx, 80, 310, 920, 980, 24);
+    drawRoundedRect(ctx, 80, 330, 920, 1020, 28);
 
-    let yPos = 390;
+    let yPos = 420;
     if (confirmed.length === 0) {
       ctx.fillStyle = "#94a3b8";
-      ctx.font = "italic 36px sans-serif";
-      ctx.fillText("Nessun pronostico approvato", 140, yPos);
+      ctx.font = "italic 40px sans-serif";
+      ctx.fillText("Nessun pronostico inserito", 140, yPos);
     } else {
       confirmed.slice(0, 8).forEach((c, idx) => {
         ctx.fillStyle = "#ffffff";
-        ctx.font = "bold 32px sans-serif";
-        ctx.fillText(`${idx + 1}. ${c.match_label}`, 120, yPos);
+        ctx.font = "bold 34px sans-serif";
+        const label = c.match_label.length > 28 ? c.match_label.substring(0, 26) + "..." : c.match_label;
+        ctx.fillText(`${idx + 1}. ${label}`, 120, yPos);
 
         ctx.fillStyle = "#0084ff";
-        ctx.font = "bold 30px sans-serif";
-        ctx.fillText(`Pronostico: ${c.selection}`, 120, yPos + 42);
+        ctx.font = "bold 32px sans-serif";
+        ctx.fillText(`Pronostico: ${c.selection}`, 120, yPos + 44);
 
         ctx.fillStyle = "#f59e0b";
-        ctx.font = "900 36px monospace";
+        ctx.font = "900 38px monospace";
         ctx.fillText(`@${Number(c.odds).toFixed(2)}`, 850, yPos + 25);
 
         ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(120, yPos + 75);
-        ctx.lineTo(960, yPos + 75);
+        ctx.moveTo(120, yPos + 80);
+        ctx.lineTo(960, yPos + 80);
         ctx.stroke();
 
-        yPos += 115;
+        yPos += 120;
       });
     }
 
-    // Box Totali
     ctx.fillStyle = "#162436";
-    drawRoundedRect(ctx, 80, 1330, 920, 420, 24);
+    drawRoundedRect(ctx, 80, 1400, 920, 420, 28);
 
     ctx.fillStyle = "#94a3b8";
     ctx.font = "bold 32px sans-serif";
-    ctx.fillText("QUOTA TOTALE", 130, 1410);
-    ctx.fillText("PARTECIPANTI", 600, 1410);
+    ctx.fillText("QUOTA TOTALE", 140, 1480);
+    ctx.fillText("PUNTATA", 660, 1480);
 
     ctx.fillStyle = "#ffffff";
-    ctx.font = "900 52px monospace";
-    ctx.fillText(`@${totalOdds}`, 130, 1480);
-    ctx.fillText(`${safeParticipants} (${stakePerHead}€ cad.)`, 600, 1480);
+    ctx.font = "900 58px monospace";
+    ctx.fillText(`@${totalOdds}`, 140, 1560);
+    ctx.fillText(`${stake} €`, 660, 1560);
 
     ctx.fillStyle = "#10b981";
-    ctx.font = "bold 34px sans-serif";
-    ctx.fillText(`POTENZIALE VINCITA (${stake}€):`, 130, 1580);
+    ctx.font = "bold 36px sans-serif";
+    ctx.fillText("POTENZIALE VINCITA:", 140, 1670);
 
-    ctx.font = "900 84px monospace";
-    ctx.fillText(`${potentialWin} €`, 130, 1680);
-
-    ctx.fillStyle = "#f59e0b";
-    ctx.font = "bold 36px monospace";
-    ctx.fillText(`➜ ${winPerHead} € a testa`, 550, 1670);
+    ctx.font = "900 96px monospace";
+    ctx.fillText(`${potentialWin} €`, 140, 1780);
 
     const dataUrl = canvas.toDataURL("image/png");
     const link = document.createElement("a");
-    link.download = `BetSquad-${roomId}.png`;
+    link.download = `BetSquad-Schedina.png`;
     link.href = dataUrl;
     link.click();
     showToast("📸 Card Storia scaricata!");
   };
 
   return (
-    <div className="min-h-screen bg-[var(--bg-main)] text-[var(--text-main)] pb-28 font-sans antialiased select-none">
+    <div className="min-h-screen bg-[var(--bg-main)] text-[var(--text-main)] pb-24 font-sans antialiased select-none">
       <canvas ref={canvasRef} className="hidden" />
 
       {toast && (
@@ -492,7 +491,7 @@ export default function RoomPage() {
         )}
       </div>
 
-      {/* Tabs Reordinate: Palinsesto -> Votazioni -> Schedina Squad -> Comparatore */}
+      {/* Tabs Reordinate */}
       <div className="bg-[var(--surface-header)] border-b border-[var(--border-subtle)] px-2 flex text-xs font-bold uppercase tracking-wider overflow-x-auto no-scrollbar">
         <button
           onClick={() => setActiveTab("palinsesto")}
@@ -682,7 +681,7 @@ export default function RoomPage() {
           </div>
         )}
 
-        {/* Tab 2: Votazioni (Con Reaction Rapide) */}
+        {/* Tab 2: Votazioni */}
         {activeTab === "voti" && (
           <div className="space-y-2">
             {pending.length === 0 ? (
@@ -726,7 +725,6 @@ export default function RoomPage() {
                       </div>
                     </div>
 
-                    {/* Barra Reaction Emoji Rapide */}
                     <div className="flex items-center gap-1.5 pt-1 border-t border-[var(--border-subtle)] text-xs">
                       <span className="text-[10px] text-[var(--text-muted)]">Reagisci:</span>
                       {["🔥", "💣", "🔒", "🤡"].map((emoji) => {
@@ -754,7 +752,7 @@ export default function RoomPage() {
           </div>
         )}
 
-        {/* Tab 3: Schedina Squad (Con Calcolatore a Testa) */}
+        {/* Tab 3: Schedina Squad (Schermata Piena) */}
         {activeTab === "schedina" && (
           <div className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-lg p-3">
             <div className="flex items-center justify-between pb-3 border-b border-[var(--border-subtle)] mb-3">
@@ -810,7 +808,6 @@ export default function RoomPage() {
                     <span className="text-xl font-mono font-black text-emerald-500">{potentialWin} €</span>
                   </div>
 
-                  {/* Divisione Spesa e Vincita a Testa */}
                   <div className="mt-3 pt-3 border-t border-[var(--border-subtle)] bg-[var(--surface-sub)] p-3 rounded-lg">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-[11px] font-bold text-[var(--text-muted)] uppercase">Partecipanti alla spesa:</span>
@@ -875,115 +872,86 @@ export default function RoomPage() {
         )}
       </main>
 
-      {/* Schedina a Scomparsa (Drawer a Tendina Stile NovaJackpot) */}
-      <div
-        className={`fixed inset-0 bg-black/60 backdrop-blur-xs z-50 transition-opacity duration-300 ${
-          isSheetOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
-        }`}
-        onClick={() => setIsSheetOpen(false)}
-      >
-        <div
-          className={`absolute bottom-0 left-0 right-0 max-w-xl mx-auto bg-[var(--surface-card)] border-t border-[var(--border-strong)] rounded-t-2xl shadow-2xl p-4 transition-transform duration-300 max-h-[85vh] overflow-y-auto pb-16 ${
-            isSheetOpen ? "translate-y-0" : "translate-y-full"
-          }`}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Maniglia Touch */}
-          <div className="w-12 h-1.5 bg-[var(--border-strong)] rounded-full mx-auto mb-3 cursor-pointer" onClick={() => setIsSheetOpen(false)} />
-
-          <div className="flex items-center justify-between pb-3 border-b border-[var(--border-subtle)]">
-            <span className="text-sm font-bold uppercase tracking-wider">Schedina Squad ({confirmed.length})</span>
-            <button onClick={() => setIsSheetOpen(false)} className="text-xs font-bold text-[var(--text-muted)] hover:text-white p-1 cursor-pointer">
-              Chiudi ▼
-            </button>
-          </div>
-
-          {/* Contenuto Schedina Tendina */}
-          {confirmed.length === 0 ? (
-            <div className="py-8 text-center text-xs text-[var(--text-muted)]">
-              Nessun evento ancora selezionato.
+      {/* TENDINA FLOTTANTE IN BASSO A DESTRA (Stile NovaJackpot: w-72/w-80, NO BACKDROP) */}
+      {activeTab !== "schedina" && (
+        <div className="fixed bottom-3 right-3 sm:right-6 z-40 flex flex-col items-end pointer-events-none">
+          <div
+            className={`w-[calc(100vw-24px)] max-w-[320px] sm:max-w-[350px] bg-[var(--surface-card)] border border-[var(--border-strong)] rounded-xl shadow-2xl p-3 mb-2 transition-all duration-300 pointer-events-auto max-h-[65vh] overflow-y-auto ${
+              isSheetOpen
+                ? "opacity-100 translate-y-0 scale-100"
+                : "opacity-0 translate-y-4 scale-95 pointer-events-none"
+            }`}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-[var(--border-subtle)]">
+              <span className="text-xs font-bold uppercase tracking-wider">Schedina Rapida ({confirmed.length})</span>
+              <button
+                onClick={() => setIsSheetOpen(false)}
+                className="text-xs font-bold text-[var(--text-muted)] hover:text-white px-1.5 py-0.5 rounded bg-[var(--surface-quote)] cursor-pointer"
+              >
+                ✕
+              </button>
             </div>
-          ) : (
-            <div className="divide-y divide-[var(--border-subtle)] py-2">
-              {confirmed.map((c) => (
-                <div key={c.id} className="py-2 flex items-center justify-between text-xs">
-                  <div className="pr-2 truncate">
-                    <div className="font-bold truncate">{c.match_label}</div>
-                    <div className="text-[11px] text-[#0084ff] font-semibold">{c.selection}</div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono font-bold text-[var(--quote-val)]">@{Number(c.odds).toFixed(2)}</span>
-                    <button onClick={() => removePick(c.id)} className="text-rose-500 text-xs px-1 cursor-pointer">✕</button>
-                  </div>
-                </div>
-              ))}
 
-              <div className="pt-3 mt-2 border-t border-[var(--border-subtle)] space-y-2 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-[var(--text-muted)]">Puntata Totale:</span>
-                  <span className="font-mono font-bold">{stake} €</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[var(--text-muted)]">Quota Totale:</span>
-                  <span className="font-mono font-bold">@{totalOdds}</span>
-                </div>
-                <div className="flex justify-between text-emerald-500 text-base font-mono font-black pt-1">
-                  <span>Vincita Totale:</span>
-                  <span>{potentialWin} €</span>
-                </div>
-
-                {/* Box a Testa nella Tendina */}
-                <div className="bg-[var(--surface-sub)] p-2.5 rounded border border-[var(--border-subtle)] flex items-center justify-between text-xs">
-                  <div>
-                    <span className="block text-[10px] text-[var(--text-muted)] uppercase">Spesa a testa ({safeParticipants} pers.):</span>
-                    <span className="font-mono font-bold text-amber-500">{stakePerHead} €</span>
+            {confirmed.length === 0 ? (
+              <div className="py-6 text-center text-xs text-[var(--text-muted)]">
+                Schedina vuota. Clicca sulle quote in pagina per aggiungerle.
+              </div>
+            ) : (
+              <div className="divide-y divide-[var(--border-subtle)] py-1.5">
+                {confirmed.map((c) => (
+                  <div key={c.id} className="py-1.5 flex items-center justify-between text-xs">
+                    <div className="pr-2 truncate">
+                      <div className="font-bold truncate">{c.match_label}</div>
+                      <div className="text-[10px] text-[#0084ff] font-semibold">{c.selection}</div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="font-mono font-bold text-[var(--quote-val)] text-xs">@{Number(c.odds).toFixed(2)}</span>
+                      <button onClick={() => removePick(c.id)} className="text-rose-500 text-xs px-1 cursor-pointer">✕</button>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <span className="block text-[10px] text-[var(--text-muted)] uppercase">Vincita a testa:</span>
-                    <span className="font-mono font-bold text-emerald-500">{winPerHead} €</span>
-                  </div>
-                </div>
+                ))}
 
-                <div className="flex gap-2 pt-2">
-                  <button
-                    onClick={exportStoryCard}
-                    className="flex-1 bg-[var(--surface-quote)] border border-[var(--border-subtle)] hover:border-[#0084ff] py-2 rounded text-xs font-bold text-center cursor-pointer"
-                  >
-                    📸 Scarica Storia
-                  </button>
-                  <button
-                    onClick={copyForWhatsApp}
-                    className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded text-xs font-bold text-center cursor-pointer"
-                  >
-                    Condividi Link
-                  </button>
+                <div className="pt-2 mt-1 space-y-1 text-xs">
+                  <div className="flex justify-between text-[11px]">
+                    <span className="text-[var(--text-muted)]">Quota: @{totalOdds}</span>
+                    <span className="text-[var(--text-muted)]">Puntata: {stake}€</span>
+                  </div>
+                  <div className="flex justify-between items-baseline pt-1 text-emerald-500 font-mono font-black text-sm">
+                    <span className="text-xs uppercase font-bold text-[var(--text-muted)]">Vincita:</span>
+                    <span>{potentialWin} €</span>
+                  </div>
+
+                  <div className="flex gap-1.5 pt-2">
+                    <button
+                      onClick={exportStoryCard}
+                      className="flex-1 bg-[var(--surface-quote)] border border-[var(--border-subtle)] hover:border-[#0084ff] py-1.5 rounded text-[11px] font-bold text-center cursor-pointer"
+                    >
+                      📸 Storia
+                    </button>
+                    <button
+                      onClick={copyForWhatsApp}
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-1.5 rounded text-[11px] font-bold text-center cursor-pointer"
+                    >
+                      Invia
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Floating Footer Bar con Trigger Tendina */}
-      <footer className="fixed bottom-0 left-0 right-0 bg-[var(--surface-header)]/95 backdrop-blur border-t border-[var(--border-subtle)] px-3 py-2 z-40 flex items-center justify-between pb-safe shadow-lg">
-        <div onClick={() => setIsSheetOpen(true)} className="cursor-pointer">
-          <div className="text-[9px] text-[var(--text-muted)] uppercase tracking-wider flex items-center gap-1">
-            <span>{confirmed.length} EVENTI • @{totalOdds}</span>
-            <span className="text-[8px] bg-[#0084ff]/20 text-[#0084ff] px-1 rounded">▲ APRI</span>
+            )}
           </div>
-          <div className="text-sm font-mono font-black text-emerald-500">
-            {potentialWin} € <span className="text-[10px] font-normal text-[var(--text-muted)]">({winPerHead}€/cad)</span>
-          </div>
-        </div>
 
-        <button
-          onClick={() => setIsSheetOpen(!isSheetOpen)}
-          className="bg-[#0084ff] hover:bg-[#0073e6] active:bg-[#0060c0] text-white font-bold text-xs uppercase px-3 py-2 rounded-lg shadow-sm flex items-center gap-1 cursor-pointer"
-        >
-          <span>Vedi Schedina</span>
-          <span className="text-[10px]">{isSheetOpen ? "▼" : "▲"}</span>
-        </button>
-      </footer>
+          <button
+            onClick={() => setIsSheetOpen(!isSheetOpen)}
+            className="pointer-events-auto h-11 px-4 rounded-full bg-[#0084ff] hover:bg-[#0073e6] active:bg-[#0060c0] text-white font-black text-xs uppercase tracking-wider shadow-2xl flex items-center gap-2 cursor-pointer border border-white/20 transition-transform active:scale-95"
+          >
+            <span>SCHEDINA</span>
+            <span className="px-1.5 py-0.5 rounded-full bg-white/25 text-[10px] font-mono">
+              {confirmed.length}
+            </span>
+            <span className="text-[10px]">{isSheetOpen ? "▼" : "▲"}</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }
